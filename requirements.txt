@@ -1,0 +1,16 @@
+fastapi
+uvicorn
+httpx
+python-socketio
+python-multipart
+# Google GenAI SDK (v1beta)
+google-genai
+# Computer Vision & Audio
+opencv-python
+pyaudio
+pillow
+mss
+# Utilities
+python-dotenv
+# Face & Hand tracking
+mediapipe

@@ -1,0 +1,8 @@
+docker run -it --name n8n `
+-p 5678:5678 `
+-v C:\n8n-data:/home/node/.n8n `
+-e WEBHOOK_URL=https://n8n.orbitalsync.site `
+-e N8N_HOST=n8n.orbitalsync.site `
+-e N8N_PORT=5678 `
+-e N8N_PROTOCOL=https  `
+n8nio/n8n

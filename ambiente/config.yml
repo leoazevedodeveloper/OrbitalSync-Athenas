@@ -1,0 +1,7 @@
+tunnel: cd948a28-425f-4688-b40f-2598343e74ff
+credentials-file: C:\Users\leona\.cloudflared\cd948a28-425f-4688-b40f-2598343e74ff.json
+
+ingress:
+  - hostname: n8n.orbitalsync.site
+    service: http://localhost:5678
+  - service: http_status:404

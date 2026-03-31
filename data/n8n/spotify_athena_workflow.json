@@ -1,0 +1,358 @@
+{
+  "name": "ATHENA Spotify Control",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "athena-spotify",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-athena",
+      "name": "Webhook ATHENA",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "athena-spotify"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// Mapeia body.action -> spotifyOp (chaves do Switch n8n: pause, resume, nextSong, …).\n// IMPORTANTE: o Switch NÃO tem chave \"play\" — só \"resume\". Por isso play → resume.\n\nconst root = $input.first().json;\nconst body = root.body && typeof root.body === 'object' ? root.body : root;\nconst raw = String(body.action || '')\n  .toLowerCase()\n  .trim();\n\nconst map = {\n  pause: 'pause',\n  play: 'resume',\n  resume: 'resume',\n  start: 'resume',\n  unpause: 'resume',\n  continue: 'resume',\n  continuar: 'resume',\n  retomar: 'resume',\n  despausar: 'resume',\n  next: 'nextSong',\n  skip: 'nextSong',\n  previous: 'previousSong',\n  back: 'previousSong',\n  volume: 'volume',\n  playlist: 'startMusic',\n  play_playlist: 'startMusic',\n};\n\nlet spotifyOp = map[raw];\nif (!spotifyOp) {\n  spotifyOp = 'unsupported';\n}\n\nreturn [{ json: { spotifyOp, body, action: raw } }];\n"
+      },
+      "id": "code-map",
+      "name": "Map action",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 7,
+        "output": "={{ ({\n  pause: 0,\n  resume: 1,\n  nextSong: 2,\n  previousSong: 3,\n  volume: 4,\n  startMusic: 5,\n})[$json.spotifyOp] ?? 6 }}"
+      },
+      "id": "switch-route",
+      "name": "Route",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        440,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "resource": "player",
+        "operation": "pause"
+      },
+      "id": "sp-pause",
+      "name": "Pause",
+      "type": "n8n-nodes-base.spotify",
+      "typeVersion": 1,
+      "position": [
+        700,
+        0
+      ],
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "player",
+        "operation": "resume"
+      },
+      "id": "sp-resume",
+      "name": "Resume",
+      "type": "n8n-nodes-base.spotify",
+      "typeVersion": 1,
+      "position": [
+        700,
+        120
+      ],
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "player",
+        "operation": "nextSong"
+      },
+      "id": "sp-next",
+      "name": "Next",
+      "type": "n8n-nodes-base.spotify",
+      "typeVersion": 1,
+      "position": [
+        700,
+        240
+      ],
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "player",
+        "operation": "previousSong"
+      },
+      "id": "sp-prev",
+      "name": "Previous",
+      "type": "n8n-nodes-base.spotify",
+      "typeVersion": 1,
+      "position": [
+        700,
+        360
+      ],
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "player",
+        "operation": "volume",
+        "volumePercent": "={{ Number($json.body.volume_percent ?? $json.body.volume ?? 50) }}"
+      },
+      "id": "sp-vol",
+      "name": "Volume",
+      "type": "n8n-nodes-base.spotify",
+      "typeVersion": 1,
+      "position": [
+        700,
+        480
+      ],
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "resource": "player",
+        "operation": "startMusic",
+        "id": "={{ $json.body.playlist_uri || $json.body.uri || $json.body.context_uri }}"
+      },
+      "id": "sp-playlist",
+      "name": "Start playlist",
+      "type": "n8n-nodes-base.spotify",
+      "typeVersion": 1,
+      "position": [
+        700,
+        600
+      ],
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{\n  json: {\n    error: true,\n    message: 'Acao nao suportada pelo no nativo Spotify no n8n (ex.: shuffle, repeat). '\n      + 'Use outro fluxo com HTTP Request ou escolha: pause, play, resume, next, previous, volume, playlist.'\n  }\n}];"
+      },
+      "id": "code-bad",
+      "name": "Unsupported action",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        700,
+        720
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({\n  ok: $json.error !== true,\n  action: $('Map action').first().json.action,\n  spotifyOp: $('Map action').first().json.spotifyOp,\n  result: $json\n}) }}",
+        "options": {}
+      },
+      "id": "respond",
+      "name": "Respond to Webhook",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        960,
+        300
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook ATHENA": {
+      "main": [
+        [
+          {
+            "node": "Map action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Map action": {
+      "main": [
+        [
+          {
+            "node": "Route",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route": {
+      "main": [
+        [
+          {
+            "node": "Pause",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Resume",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Next",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Previous",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Volume",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Start playlist",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Unsupported action",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pause": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resume": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Next": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Previous": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Volume": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Start playlist": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Unsupported action": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  },
+  "staticData": null,
+  "meta": {
+    "templateCredsSetupCompleted": false
+  },
+  "tags": []
+}
