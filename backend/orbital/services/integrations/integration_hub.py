@@ -5,9 +5,9 @@ import os
 from urllib.parse import urlparse
 
 from orbital.paths import REPO_ROOT
-from orbital.services.comfyui_client import resolved_comfyui_workflow_path
+from orbital.services.supabase.remote_config import settings_module_key, supabase_config_enabled
 
-from .supabase_remote_config import settings_module_key, supabase_config_enabled
+from .comfyui_client import resolved_comfyui_workflow_path
 from .webhook_config import list_hook_summaries, load_webhooks_config
 
 

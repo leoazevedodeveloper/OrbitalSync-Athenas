@@ -1,105 +1,107 @@
 import React, { useEffect, useState, useRef, useMemo, useCallback } from 'react';
-import io from 'socket.io-client';
 
-import Visualizer from './components/Visualizer';
-import TopAudioBar from './components/TopAudioBar';
-import ChatModule from './components/ChatModule';
-import ToolsModule from './components/ToolsModule';
+import { BACKEND_ORIGIN, AI_VIS_SILENT_BANDS, MIC_VIS_SILENT_BANDS } from './constants/appConfig';
+import { socket } from './lib/socket';
+import {
+    trimChatMessages,
+    createMessageId,
+    splitTranscriptionForSmoothUI,
+    transcriptionChunksPerTickForSender,
+    transcriptionFlushDelayForChunk,
+    fixCollapsedPunctuation,
+} from './utils/chatTranscription';
+import { startTimerAlarm, stopTimerAlarm } from './utils/timerAlertSound';
+import Visualizer from './features/orbital-ui/Visualizer';
+import TopAudioBar from './features/orbital-ui/TopAudioBar';
+import ChatModule from './features/chat/ChatModule';
+import ToolsModule from './features/orbital-ui/ToolsModule';
 import { Mic, MicOff, Settings, X, Minus, Maximize2, Power, Video, VideoOff, Layout, Hand, Clock } from 'lucide-react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 // MemoryPrompt removed - memory is now actively saved to project
-import ConfirmationPopup from './components/ConfirmationPopup';
-import AuthLock from './components/AuthLock';
-import SettingsWindow from './components/SettingsWindow';
-import BootSequence from './components/BootSequence';
-import IntegrationHealthDock from './components/IntegrationHealthDock';
+import ConfirmationPopup from './shared/ConfirmationPopup';
+import AuthLock from './features/auth/AuthLock';
+import SettingsWindow from './features/settings/SettingsWindow';
+import BootSequence from './features/orbital-ui/BootSequence';
+import IntegrationHealthDock from './features/orbital-ui/IntegrationHealthDock';
+import AssistantTimerDock from './features/orbital-ui/AssistantTimerDock';
+import AgendaCalendarPanel from './features/orbital-ui/AgendaCalendarPanel';
+import FinancePanel from './features/finance/FinancePanel';
 
+const AGENDA_STORAGE_KEY = 'orbital_agenda_reminders_v1';
+const AGENDA_MAX_ITEMS = 200;
 
-
-/** Origem do backend (Socket.IO + `/api/comfyui-image` no histórico). */
-const BACKEND_ORIGIN = 'http://localhost:8000';
-/** Evita crescimento ilimitado do estado após muitas horas (lag de render/memória). */
-const MAX_CHAT_MESSAGES_STORED = 450;
-const TRANSCRIPTION_USER_CHUNK_TARGET = 18;
-const TRANSCRIPTION_ASSISTANT_CHUNK_TARGET = 11;
-const TRANSCRIPTION_USER_CHUNKS_PER_TICK = 2;
-const TRANSCRIPTION_ASSISTANT_CHUNKS_PER_TICK = 1;
-const TRANSCRIPTION_USER_FLUSH_MS = 14;
-const TRANSCRIPTION_ASSISTANT_FLUSH_MS = 36;
-const TRANSCRIPTION_ASSISTANT_SOFT_PAUSE_MS = 58;
-const TRANSCRIPTION_ASSISTANT_STRONG_PAUSE_MS = 112;
-
-function trimChatMessages(msgs) {
-    if (!Array.isArray(msgs) || msgs.length <= MAX_CHAT_MESSAGES_STORED) return msgs;
-    return msgs.slice(-MAX_CHAT_MESSAGES_STORED);
+/** Título normalizado para casar lembrete local com evento vindo do Google. */
+function normAgendaTitle(t) {
+    return String(t || '')
+        .trim()
+        .toLowerCase()
+        .replace(/\s+/g, ' ');
 }
 
-function createMessageId(prefix = 'msg') {
-    return `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function isAssistantSender(sender) {
-    const s = String(sender || '').toLowerCase();
-    return s.includes('athenas') || s.includes('ada') || s.includes('jarvis');
-}
-
-function splitTranscriptionForSmoothUI(sender, text) {
-    const raw = String(text || '');
-    if (!raw) return [];
-    const chunkTarget = isAssistantSender(sender)
-        ? TRANSCRIPTION_ASSISTANT_CHUNK_TARGET
-        : TRANSCRIPTION_USER_CHUNK_TARGET;
-    if (raw.length <= chunkTarget + 6) {
-        return [{ sender, text: raw }];
-    }
-
-    const pieces = [];
-    let cursor = 0;
-    while (cursor < raw.length) {
-        let end = Math.min(cursor + chunkTarget, raw.length);
-        if (end < raw.length) {
-            const lookahead = raw.slice(end, Math.min(end + 8, raw.length));
-            const breakMatch = lookahead.match(/[\s,.;:!?]/);
-            if (breakMatch) {
-                end += breakMatch.index + 1;
-            }
+/** Evita dois cartões para o mesmo compromisso (local + Google). */
+function mergeAgendaLocalsWithGoogle(locals, googleEvents) {
+    const googleIds = new Set(googleEvents.map((g) => g.googleEventId).filter(Boolean));
+    const localsFiltered = locals.filter((r) => {
+        if (r.googleEventId && googleIds.has(r.googleEventId)) return false;
+        for (const g of googleEvents) {
+            if (normAgendaTitle(g.title) !== normAgendaTitle(r.title)) continue;
+            if (Math.abs((g.startsAtMs || 0) - (r.startsAtMs || 0)) <= 120000) return false;
         }
-        pieces.push({ sender, text: raw.slice(cursor, end) });
-        cursor = end;
-    }
-    return pieces;
+        return true;
+    });
+    const out = [...googleEvents, ...localsFiltered];
+    out.sort((a, b) => a.startsAtMs - b.startsAtMs);
+    return out;
 }
 
-function transcriptionChunksPerTickForSender(sender) {
-    return isAssistantSender(sender)
-        ? TRANSCRIPTION_ASSISTANT_CHUNKS_PER_TICK
-        : TRANSCRIPTION_USER_CHUNKS_PER_TICK;
+function easterSunday(year) {
+    const a = year % 19;
+    const b = Math.floor(year / 100);
+    const c = year % 100;
+    const d = Math.floor(b / 4);
+    const e = b % 4;
+    const f = Math.floor((b + 8) / 25);
+    const g = Math.floor((b - f + 1) / 3);
+    const h = (19 * a + b - d - g + 15) % 30;
+    const i = Math.floor(c / 4);
+    const k = c % 4;
+    const l = (32 + 2 * e + 2 * i - h - k) % 7;
+    const m = Math.floor((a + 11 * h + 22 * l) / 451);
+    const month = Math.floor((h + l - 7 * m + 114) / 31) - 1;
+    const day = ((h + l - 7 * m + 114) % 31) + 1;
+    return new Date(year, month, day);
 }
 
-function transcriptionFlushDelayForChunk(chunk, pendingQueueSize = 0) {
-    const sender = chunk?.sender;
-    if (!isAssistantSender(sender)) {
-        return TRANSCRIPTION_USER_FLUSH_MS;
-    }
-
-    const text = String(chunk?.text || '');
-    let delay = TRANSCRIPTION_ASSISTANT_FLUSH_MS;
-    if (/[.!?]\s*$/.test(text)) {
-        delay += TRANSCRIPTION_ASSISTANT_STRONG_PAUSE_MS;
-    } else if (/[,;:]\s*$/.test(text)) {
-        delay += TRANSCRIPTION_ASSISTANT_SOFT_PAUSE_MS;
-    }
-
-    // Evita acumular atraso demais quando chegam muitos chunks de uma vez.
-    const backlogBoost = Math.min(24, Math.floor(pendingQueueSize / 12));
-    return Math.max(18, delay - backlogBoost);
+function addDays(baseDate, amount) {
+    const d = new Date(baseDate);
+    d.setDate(d.getDate() + amount);
+    return d;
 }
 
-/** Fallback estável para props do Visualizer quando o espectro vem só por ref (sem setState por frame). */
-const MIC_VIS_SILENT_BANDS = Object.freeze(new Array(32).fill(0));
-const AI_VIS_SILENT_BANDS = Object.freeze(new Array(64).fill(0));
+function dateAtNine(dateLike) {
+    const d = new Date(dateLike);
+    d.setHours(9, 0, 0, 0);
+    return d.getTime();
+}
 
-const socket = io(BACKEND_ORIGIN);
+function buildBrazilNationalHolidays(year) {
+    const easter = easterSunday(year);
+    return [
+        { key: 'confraternizacao-universal', title: 'Feriado Nacional · Confraternização Universal', startsAtMs: new Date(year, 0, 1, 9, 0, 0, 0).getTime() },
+        { key: 'paixao-de-cristo', title: 'Feriado Nacional · Paixão de Cristo', startsAtMs: dateAtNine(addDays(easter, -2)) },
+        { key: 'tiradentes', title: 'Feriado Nacional · Tiradentes', startsAtMs: new Date(year, 3, 21, 9, 0, 0, 0).getTime() },
+        { key: 'dia-do-trabalho', title: 'Feriado Nacional · Dia do Trabalho', startsAtMs: new Date(year, 4, 1, 9, 0, 0, 0).getTime() },
+        { key: 'independencia-do-brasil', title: 'Feriado Nacional · Independência do Brasil', startsAtMs: new Date(year, 8, 7, 9, 0, 0, 0).getTime() },
+        { key: 'nossa-senhora-aparecida', title: 'Feriado Nacional · Nossa Senhora Aparecida', startsAtMs: new Date(year, 9, 12, 9, 0, 0, 0).getTime() },
+        { key: 'finados', title: 'Feriado Nacional · Finados', startsAtMs: new Date(year, 10, 2, 9, 0, 0, 0).getTime() },
+        { key: 'proclamacao-da-republica', title: 'Feriado Nacional · Proclamação da República', startsAtMs: new Date(year, 10, 15, 9, 0, 0, 0).getTime() },
+        { key: 'dia-da-consciencia-negra', title: 'Feriado Nacional · Dia da Consciência Negra', startsAtMs: new Date(year, 10, 20, 9, 0, 0, 0).getTime() },
+        { key: 'natal', title: 'Feriado Nacional · Natal', startsAtMs: new Date(year, 11, 25, 9, 0, 0, 0).getTime() },
+    ];
+}
+
+
+
 const { ipcRenderer } = window.require('electron');
 
 function App() {
@@ -151,6 +153,57 @@ function App() {
     const [bootHistoryReady, setBootHistoryReady] = useState(false);
     /** pending | skipped | running | unavailable | standalone */
     const [cloudflaredBoot, setCloudflaredBoot] = useState('pending');
+
+    /** Cronómetros iniciados pela tool `start_timer` (backend → assistant_timer). */
+    const [assistantTimers, setAssistantTimers] = useState([]);
+
+    /** Lembretes de agenda (`add_calendar_reminder` → assistant_calendar), persistidos em localStorage. */
+    const [agendaReminders, setAgendaReminders] = useState(() => {
+        try {
+            const raw = localStorage.getItem(AGENDA_STORAGE_KEY);
+            if (!raw) return [];
+            const parsed = JSON.parse(raw);
+            if (!Array.isArray(parsed)) return [];
+            return parsed
+                .filter(
+                    (r) =>
+                        r &&
+                        typeof r.id === 'string' &&
+                        typeof r.title === 'string' &&
+                        Number.isFinite(r.startsAtMs)
+                )
+                .sort((a, b) => a.startsAtMs - b.startsAtMs)
+                .slice(0, AGENDA_MAX_ITEMS);
+        } catch {
+            return [];
+        }
+    });
+    const [agendaPanelOpen, setAgendaPanelOpen] = useState(false);
+    /** Eventos espelhados do Google Calendar (n8n list); não persistidos — só o mês pedido. */
+    const [googleAgendaEvents, setGoogleAgendaEvents] = useState([]);
+    const [googleAgendaLoading, setGoogleAgendaLoading] = useState(false);
+    const [googleAgendaError, setGoogleAgendaError] = useState('');
+    const [financePanelOpen, setFinancePanelOpen] = useState(false);
+    const [financeLoading, setFinanceLoading] = useState(false);
+    const [financeError, setFinanceError] = useState('');
+    const [financePeriod, setFinancePeriod] = useState(() => {
+        const d = new Date();
+        return { type: 'month', year: d.getFullYear(), month: d.getMonth() + 1 };
+    });
+    const financeMonthAnchorRef = useRef({
+        year: new Date().getFullYear(),
+        month: new Date().getMonth() + 1,
+    });
+    const [financeSnapshot, setFinanceSnapshot] = useState({
+        source: 'pierre',
+        accounts: [],
+        bank_accounts: [],
+        credit_cards: [],
+        transactions: [],
+        summary: {},
+        synced_at_ms: 0,
+        view: null,
+    });
 
     const isImageGenerationPending = confirmationRequest?.tool === 'generate_image';
     const isImageGenerationActive = isImageGenerating || isImageGenerationPending;
@@ -294,6 +347,9 @@ function App() {
     const dragOffsetRef = useRef({ x: 0, y: 0 });
     const isDraggingRef = useRef(false);
     const appliedSpeakerIdRef = useRef(null);
+    /** Altifalante escolhido nas definições — usado p.ex. pelo alerta do cronómetro (Web Audio setSinkId). */
+    const selectedSpeakerIdRef = useRef(selectedSpeakerId);
+    selectedSpeakerIdRef.current = selectedSpeakerId;
 
     // Update refs when state changes
     useEffect(() => {
@@ -696,7 +752,9 @@ function App() {
             const chunkText = typeof data?.text === 'string' ? data.text : '';
             if (isAssistant && isImageGenerationActiveRef.current) {
                 if (chunkText.trim().length > 0) {
-                    pendingAssistantTextRef.current += chunkText;
+                    pendingAssistantTextRef.current = fixCollapsedPunctuation(
+                        pendingAssistantTextRef.current + chunkText
+                    );
                 }
                 return prev;
             }
@@ -704,22 +762,25 @@ function App() {
             const lastMsg = prev[prev.length - 1];
 
             if (lastMsg && lastMsg.sender === data.sender) {
+                const raw = lastMsg.text + chunkText;
+                const text = isAssistant ? fixCollapsedPunctuation(raw) : raw;
                 return trimChatMessages([
                     ...prev.slice(0, -1),
                     {
                         ...lastMsg,
-                        text: lastMsg.text + chunkText
-                    }
+                        text,
+                    },
                 ]);
             }
+            const text = isAssistant ? fixCollapsedPunctuation(chunkText) : chunkText;
             return trimChatMessages([
                 ...prev,
                 {
                     id: createMessageId('stream'),
                     sender: data.sender,
-                    text: chunkText,
-                    time: new Date().toLocaleTimeString()
-                }
+                    text,
+                    time: new Date().toLocaleTimeString(),
+                },
             ]);
         };
 
@@ -770,6 +831,152 @@ function App() {
         socket.on('tool_confirmation_request', (data) => {
             console.log("Received Confirmation Request:", data);
             setConfirmationRequest(data);
+        });
+
+        socket.on('assistant_calendar', (payload) => {
+            if (payload?.event === 'google_event_removed') {
+                const gid = typeof payload?.google_event_id === 'string' ? payload.google_event_id.trim() : '';
+                if (!gid) return;
+                setAgendaReminders((prev) => prev.filter((r) => r.googleEventId !== gid));
+                setGoogleAgendaEvents((prev) =>
+                    prev.filter((r) => r.googleEventId !== gid && r.id !== `gcal-${gid}`)
+                );
+                return;
+            }
+            if (payload?.event !== 'reminder_added') return;
+            const id = payload?.id;
+            const title = typeof payload?.title === 'string' ? payload.title.trim() : '';
+            const ms = Number(payload?.starts_at_ms);
+            if (!id || !title || !Number.isFinite(ms)) return;
+            const gel =
+                typeof payload?.google_event_id === 'string' && payload.google_event_id.trim()
+                    ? payload.google_event_id.trim()
+                    : undefined;
+            setAgendaReminders((prev) => {
+                const row = { id, title, startsAtMs: ms };
+                if (gel) row.googleEventId = gel;
+                const next = [...prev.filter((r) => r.id !== id), row].sort((a, b) => a.startsAtMs - b.startsAtMs);
+                return next.length > AGENDA_MAX_ITEMS ? next.slice(0, AGENDA_MAX_ITEMS) : next;
+            });
+            setAgendaPanelOpen(true);
+        });
+
+        socket.on('agenda_google_sync_result', (p) => {
+            setGoogleAgendaLoading(false);
+            if (!p?.ok) {
+                setGoogleAgendaError(String(p?.message || 'Falha ao sincronizar com Google Calendar.'));
+                return;
+            }
+            const raw = Array.isArray(p.events) ? p.events : [];
+            const cleaned = raw
+                .filter(
+                    (e) =>
+                        e &&
+                        typeof e.id === 'string' &&
+                        typeof e.title === 'string' &&
+                        Number.isFinite(e.startsAtMs)
+                )
+                .slice(0, 400);
+            setGoogleAgendaEvents(cleaned);
+            setGoogleAgendaError('');
+        });
+
+        socket.on('finance_manual_update_result', (payload) => {
+            console.log('[FINANCE][UI] finance_manual_update_result', {
+                message: payload?.message,
+                timestamp: payload?.timestamp,
+                details: payload?.details,
+            });
+        });
+
+        socket.on('finance_snapshot', (payload) => {
+            console.log('[FINANCE][UI] finance_snapshot received', {
+                accounts: Array.isArray(payload?.accounts) ? payload.accounts.length : 0,
+                transactions: Array.isArray(payload?.transactions) ? payload.transactions.length : 0,
+            });
+            const accounts = Array.isArray(payload?.accounts) ? payload.accounts : [];
+            const bank_accounts = Array.isArray(payload?.bank_accounts) ? payload.bank_accounts : [];
+            const credit_cards = Array.isArray(payload?.credit_cards) ? payload.credit_cards : [];
+            const transactions = Array.isArray(payload?.transactions) ? payload.transactions : [];
+            const summary = payload?.summary && typeof payload.summary === 'object' ? payload.summary : {};
+            setFinanceSnapshot({
+                source: payload?.source || 'pierre',
+                accounts,
+                bank_accounts,
+                credit_cards,
+                transactions,
+                summary,
+                synced_at_ms: Number(payload?.synced_at_ms) || Date.now(),
+                view: payload?.view && typeof payload.view === 'object' ? payload.view : null,
+            });
+            setFinanceLoading(false);
+            setFinanceError('');
+        });
+
+        socket.on('finance_error', (payload) => {
+            const msg = typeof payload?.msg === 'string' ? payload.msg : 'Falha no módulo financeiro.';
+            console.error('[FINANCE][UI] finance_error', msg);
+            setFinanceLoading(false);
+            setFinanceError(msg);
+        });
+
+        socket.on('assistant_timer', (payload) => {
+            const ev = payload?.event;
+            if (ev === 'started') {
+                stopTimerAlarm();
+                const id = payload?.id;
+                if (!id) return;
+                const rawEnd = payload?.ends_at;
+                const dur = Number(payload?.duration_seconds);
+                const endsAt =
+                    typeof rawEnd === 'number' && Number.isFinite(rawEnd)
+                        ? rawEnd * 1000
+                        : Date.now() + (Number.isFinite(dur) ? dur * 1000 : 60_000);
+                const label = typeof payload?.label === 'string' ? payload.label : '';
+                const totalMs =
+                    Number.isFinite(dur) && dur > 0
+                        ? dur * 1000
+                        : Math.max(1000, endsAt - Date.now());
+                setAssistantTimers((prev) => [
+                    ...prev.filter((t) => !t.ringing && t.id !== id),
+                    { id, label, endsAt, totalMs },
+                ]);
+            } else if (ev === 'finished') {
+                const id = payload?.id;
+                startTimerAlarm(selectedSpeakerIdRef.current || undefined);
+                const label = typeof payload?.label === 'string' ? payload.label : '';
+                setAssistantTimers((prev) => {
+                    if (id && prev.some((x) => x.id === id)) {
+                        return prev.map((x) =>
+                            x.id === id
+                                ? { ...x, ringing: true, endsAt: Date.now() }
+                                : x
+                        );
+                    }
+                    if (id) {
+                        return [
+                            ...prev,
+                            {
+                                id,
+                                label,
+                                endsAt: Date.now(),
+                                totalMs: 1000,
+                                ringing: true,
+                            },
+                        ];
+                    }
+                    return [
+                        ...prev,
+                        {
+                            id: `alarm-${Date.now()}`,
+                            label: '',
+                            endsAt: Date.now(),
+                            totalMs: 1000,
+                            ringing: true,
+                        },
+                    ];
+                });
+            }
         });
 
         socket.on('project_update', (data) => {
@@ -955,6 +1162,7 @@ function App() {
         initHandLandmarker();
 
         return () => {
+            stopTimerAlarm();
             socket.off('connect');
             socket.off('disconnect');
             socket.off('status');
@@ -963,6 +1171,12 @@ function App() {
             socket.off('settings');
             socket.off('transcription');
             socket.off('tool_confirmation_request');
+            socket.off('assistant_timer');
+            socket.off('assistant_calendar');
+            socket.off('agenda_google_sync_result');
+            socket.off('finance_manual_update_result');
+        socket.off('finance_snapshot');
+        socket.off('finance_error');
             socket.off('project_update');
             socket.off('chat_history');
             socket.off('image_generation_started');
@@ -1535,6 +1749,155 @@ function App() {
         );
     };
 
+    const dismissTimerAlarm = useCallback(() => {
+        stopTimerAlarm();
+        setAssistantTimers((prev) => prev.filter((t) => !t.ringing));
+    }, []);
+
+    const requestGoogleAgendaMonth = useCallback((year, month) => {
+        if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return;
+        setGoogleAgendaLoading(true);
+        setGoogleAgendaError('');
+        socket.emit('agenda_google_sync', { year, month });
+    }, []);
+
+    const agendaDisplayReminders = useMemo(
+        () => mergeAgendaLocalsWithGoogle(agendaReminders, googleAgendaEvents),
+        [agendaReminders, googleAgendaEvents],
+    );
+
+    const removeAgendaReminder = useCallback(
+        (id) => {
+            const row =
+                agendaDisplayReminders.find((r) => r.id === id) ||
+                googleAgendaEvents.find((r) => r.id === id) ||
+                agendaReminders.find((r) => r.id === id);
+            let gvid = row?.googleEventId;
+            if (!gvid && typeof id === 'string' && id.startsWith('gcal-')) {
+                gvid = id.slice(5);
+            }
+            if (gvid) {
+                socket.emit('agenda_google_delete_event', { event_id: gvid });
+            }
+            if (typeof id === 'string' && id.startsWith('gcal-')) {
+                setGoogleAgendaEvents((prev) => prev.filter((r) => r.id !== id));
+                return;
+            }
+            setAgendaReminders((prev) => prev.filter((r) => r.id !== id));
+        },
+        [agendaDisplayReminders, googleAgendaEvents, agendaReminders],
+    );
+
+    const toggleFinancePanel = useCallback(() => {
+        setFinancePanelOpen((prev) => {
+            const next = !prev;
+            console.log('[FINANCE][UI] toggle panel', { next });
+            return next;
+        });
+    }, []);
+
+    useEffect(() => {
+        if (financePeriod.type === 'month') {
+            financeMonthAnchorRef.current = { year: financePeriod.year, month: financePeriod.month };
+        }
+    }, [financePeriod]);
+
+    const emitFinanceSnapshot = useCallback((period) => {
+        setFinanceError('');
+        setFinanceLoading(true);
+        if (period.type === 'month') {
+            socket.emit('finance_get_snapshot', { limit: 800, year: period.year, month: period.month });
+        } else {
+            socket.emit('finance_get_snapshot', {
+                limit: 800,
+                start_date: period.start_date,
+                end_date: period.end_date,
+            });
+        }
+    }, []);
+
+    const changeFinanceMonth = useCallback(
+        (y, m) => {
+            const p = { type: 'month', year: y, month: m };
+            setFinancePeriod(p);
+            emitFinanceSnapshot(p);
+        },
+        [emitFinanceSnapshot],
+    );
+
+    const applyFinanceCustomRange = useCallback(
+        (start, end) => {
+            const p = { type: 'custom', start_date: start, end_date: end };
+            setFinancePeriod(p);
+            emitFinanceSnapshot(p);
+        },
+        [emitFinanceSnapshot],
+    );
+
+    const switchFinanceToCustomPeriod = useCallback(() => {
+        let start;
+        let end;
+        if (financePeriod.type === 'month') {
+            const y = financePeriod.year;
+            const mo = financePeriod.month;
+            const d0 = new Date(y, mo - 1, 1);
+            const d1 = new Date(y, mo, 0);
+            start = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
+            end = `${d1.getFullYear()}-${String(d1.getMonth() + 1).padStart(2, '0')}-${String(d1.getDate()).padStart(2, '0')}`;
+        } else {
+            start = financePeriod.start_date;
+            end = financePeriod.end_date;
+        }
+        applyFinanceCustomRange(start, end);
+    }, [financePeriod, applyFinanceCustomRange]);
+
+    const backFinanceToMonthMode = useCallback(() => {
+        const a = financeMonthAnchorRef.current;
+        changeFinanceMonth(a.year, a.month);
+    }, [changeFinanceMonth]);
+
+    const addBrazilNationalHolidays = useCallback((year) => {
+        const y = Number(year);
+        if (!Number.isInteger(y) || y < 1900 || y > 2400) return;
+        const holidays = buildBrazilNationalHolidays(y).map((h) => ({
+            id: `holiday-br-${y}-${h.key}`,
+            title: h.title,
+            startsAtMs: h.startsAtMs,
+        }));
+        setAgendaReminders((prev) => {
+            const merged = [...prev];
+            for (const h of holidays) {
+                const idx = merged.findIndex((x) => x.id === h.id);
+                if (idx >= 0) merged[idx] = h;
+                else merged.push(h);
+            }
+            merged.sort((a, b) => a.startsAtMs - b.startsAtMs);
+            return merged.length > AGENDA_MAX_ITEMS ? merged.slice(0, AGENDA_MAX_ITEMS) : merged;
+        });
+    }, []);
+
+    useEffect(() => {
+        try {
+            localStorage.setItem(AGENDA_STORAGE_KEY, JSON.stringify(agendaReminders));
+        } catch (e) {
+            console.warn('[agenda] persist failed', e);
+        }
+    }, [agendaReminders]);
+
+    useEffect(() => {
+        console.log('[FINANCE][UI] financePanelOpen changed', { open: financePanelOpen });
+        if (!financePanelOpen) return;
+        const d = new Date();
+        const y = d.getFullYear();
+        const mo = d.getMonth() + 1;
+        const p = { type: 'month', year: y, month: mo };
+        setFinancePeriod(p);
+        financeMonthAnchorRef.current = { year: y, month: mo };
+        setFinanceError('');
+        setFinanceLoading(true);
+        socket.emit('finance_get_snapshot', { limit: 800, year: y, month: mo });
+    }, [financePanelOpen]);
+
     const togglePower = () => {
         if (isConnected) {
             socket.emit('stop_audio');
@@ -1955,6 +2318,53 @@ function App() {
                     {isModularMode && <div className={`absolute top-2 right-2 text-xs font-bold tracking-widest z-20 ${activeDragElement === 'visualizer' ? 'text-green-500' : 'text-yellow-500/50'}`}>VISUALIZER</div>}
                 </div>
 
+                <AssistantTimerDock timers={assistantTimers} onDismissAlarm={dismissTimerAlarm} />
+
+                <AgendaCalendarPanel
+                    open={agendaPanelOpen}
+                    onClose={() => {
+                        setAgendaPanelOpen(false);
+                        setGoogleAgendaLoading(false);
+                        setGoogleAgendaError('');
+                    }}
+                    reminders={agendaDisplayReminders}
+                    onRemove={removeAgendaReminder}
+                    onAddBrazilNationalHolidays={addBrazilNationalHolidays}
+                    onVisibleMonthChange={requestGoogleAgendaMonth}
+                    googleLoading={googleAgendaLoading}
+                    googleError={googleAgendaError}
+                />
+
+                <FinancePanel
+                    open={financePanelOpen}
+                    onClose={() => setFinancePanelOpen(false)}
+                    snapshot={financeSnapshot}
+                    loading={financeLoading}
+                    error={financeError}
+                    financePeriod={financePeriod}
+                    onMonthChange={changeFinanceMonth}
+                    onApplyCustomRange={applyFinanceCustomRange}
+                    onSwitchToCustomPeriod={switchFinanceToCustomPeriod}
+                    onBackToMonthMode={backFinanceToMonthMode}
+                    onRefresh={() => {
+                        setFinanceError('');
+                        setFinanceLoading(true);
+                        if (financePeriod.type === 'month') {
+                            socket.emit('finance_manual_update', {
+                                limit: 500,
+                                year: financePeriod.year,
+                                month: financePeriod.month,
+                            });
+                        } else {
+                            socket.emit('finance_manual_update', {
+                                limit: 500,
+                                start_date: financePeriod.start_date,
+                                end_date: financePeriod.end_date,
+                            });
+                        }
+                    }}
+                />
+
                 {/* Video Feed Overlay */}
                 {/* Floating Project Label */}
                 {/* <div className="absolute top-[70px] left-1/2 -translate-x-1/2 text-zinc-400 text-xs font-mono tracking-widest pointer-events-none z-50 bg-black/50 px-2 py-1 rounded backdrop-blur-sm border border-white/5">
@@ -2090,6 +2500,10 @@ function App() {
                     isVideoOn={isVideoOn}
                     isHandTrackingEnabled={isHandTrackingEnabled}
                     showSettings={showSettings}
+                    agendaOpen={agendaPanelOpen}
+                    financeOpen={financePanelOpen}
+                    onToggleAgenda={() => setAgendaPanelOpen((v) => !v)}
+                    onToggleFinance={toggleFinancePanel}
                     onTogglePower={togglePower}
                     onToggleMute={toggleMute}
                     onToggleVideo={toggleVideo}

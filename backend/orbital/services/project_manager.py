@@ -5,7 +5,7 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from orbital.services.supabase_chat_history import (
+from orbital.services.supabase.chat_history import (
     append_chat_message,
     fetch_recent_messages,
     search_messages,

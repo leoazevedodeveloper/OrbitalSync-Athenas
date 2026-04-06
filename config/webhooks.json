@@ -1,0 +1,22 @@
+{
+  "version": 1,
+  "default_method": "POST",
+  "default_timeout_sec": 30,
+  "default_headers": {},
+  "hooks": [
+    {
+      "id": "athena-spotify",
+      "description": "n8n: controlar Spotify (corpo com action)",
+      "url": "https://n8n.orbitalsync.site/webhook/athena-spotify",
+      "body": {
+        "action": "pause"
+      }
+    },
+    {
+      "id": "athena-google-calendar",
+      "description": "n8n: criar evento no Google Calendar (title, starts_at_iso, ends_at_iso opcional, notes)",
+      "url": "https://n8n.orbitalsync.site/webhook/athena-google-calendar",
+      "body": {}
+    }
+  ]
+}

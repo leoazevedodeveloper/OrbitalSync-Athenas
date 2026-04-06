@@ -255,10 +255,10 @@ const ChatModule = ({
                 }`}
             >
                 <div
-                    className="h-full overflow-y-auto overflow-x-hidden pt-2 pb-4 custom-scrollbar pointer-events-auto"
+                    className="h-full overflow-y-auto overflow-x-hidden pt-3 pb-6 custom-scrollbar pointer-events-auto"
                     style={{ paddingLeft: leftInset, paddingRight: rightInset }}
                 >
-
+                <div className="flex flex-col gap-5">
                 {renderedMessages.map((msg, i) => {
                     const snd = msg.sender?.toLowerCase() || '';
                     const isAssistant =
@@ -290,7 +290,7 @@ const ChatModule = ({
                         return (
                             <div
                                 key={msg.id || `img-${i}`}
-                                className={`flex w-full my-2 ${rowAlign}`}
+                                className={`flex w-full ${rowAlign}`}
                                 style={messageMotionStyle(msg)}
                                 onMouseDown={(e) => e.stopPropagation()}
                                 onClick={openModal}
@@ -303,7 +303,7 @@ const ChatModule = ({
                                 >
                                     {(isAssistant || isUser) && (
                                         <div
-                                            className={`mb-1.5 flex items-center gap-2 px-1 ${chatFont} ${
+                                            className={`mb-2.5 flex items-center gap-2 px-1 ${chatFont} ${
                                                 isUser ? 'flex-row-reverse' : 'flex-row'
                                             }`}
                                         >
@@ -363,7 +363,7 @@ const ChatModule = ({
                         return (
                             <div
                                 key={msg.id || `sys-${i}`}
-                                className="flex justify-center my-1 px-2"
+                                className="flex justify-center px-2"
                                 style={messageMotionStyle(msg)}
                             >
                                 <span
@@ -389,7 +389,7 @@ const ChatModule = ({
                                 }`}
                             >
                                 <div
-                                    className={`mb-1.5 flex items-center gap-2 px-1 ${chatFont} ${
+                                    className={`mb-2.5 flex items-center gap-2 px-1 ${chatFont} ${
                                         isUser ? 'flex-row-reverse' : 'flex-row'
                                     }`}
                                 >
@@ -423,7 +423,8 @@ const ChatModule = ({
                         </div>
                     );
                 })}
-                    <div ref={messagesEndRef} />
+                    <div ref={messagesEndRef} className="h-0 shrink-0" aria-hidden />
+                </div>
                 </div>
             </div>
 

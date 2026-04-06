@@ -23,6 +23,7 @@ ENV_MAP: Dict[str, str] = {
     "gemini_api_key": "GEMINI_API_KEY",
     "comfyui_base_url": "COMFYUI_BASE_URL",
     "comfyui_workflow_file": "COMFYUI_WORKFLOW_FILE",
+    "pierre_api_key": "PIERRE_API_KEY",
 }
 
 
@@ -111,9 +112,14 @@ def merge_save_and_apply(updates: Dict[str, Any]) -> Tuple[bool, str]:
         if u:
             data["comfyui_workflow_file"] = u
         else:
-            from orbital.services.comfyui_client import DEFAULT_COMFYUI_WORKFLOW_REL
+            from orbital.services.integrations.comfyui_client import DEFAULT_COMFYUI_WORKFLOW_REL
 
             data["comfyui_workflow_file"] = DEFAULT_COMFYUI_WORKFLOW_REL
+
+    if "pierre_api_key" in updates:
+        u = str(updates.get("pierre_api_key") or "").strip()
+        if u:
+            data["pierre_api_key"] = u
 
     ok, err = _write_raw_file(data)
     if not ok:
@@ -132,9 +138,10 @@ def build_credentials_public_meta() -> Dict[str, Any]:
     gemini = (os.getenv("GEMINI_API_KEY") or "").strip()
     supabase_secret_length = len(srk) if srk else len(anon)
     comfy = (os.getenv("COMFYUI_BASE_URL") or "http://127.0.0.1:2000").strip()
-    from orbital.services.comfyui_client import comfyui_workflow_path_for_settings_meta
+    from orbital.services.integrations.comfyui_client import comfyui_workflow_path_for_settings_meta
 
     wf = comfyui_workflow_path_for_settings_meta()
+    pierre = (os.getenv("PIERRE_API_KEY") or "").strip()
     host = ""
     if url:
         try:
@@ -152,15 +159,18 @@ def build_credentials_public_meta() -> Dict[str, Any]:
         "supabase_configured": bool(url and key),
         "supabase_host": host,
         "gemini_configured": bool(gemini),
+        "pierre_configured": bool(pierre),
         "comfyui_base_url": comfy,
         "comfyui_workflow_file": wf,
         "secrets_visible_in_ui": expose,
         "supabase_secret_length": supabase_secret_length,
         "gemini_api_key_length": len(gemini),
+        "pierre_api_key_length": len(pierre),
     }
     if expose:
         out["credentials_secrets"] = {
             "supabase_service_role_key": (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or ""),
             "gemini_api_key": (os.getenv("GEMINI_API_KEY") or ""),
+            "pierre_api_key": (os.getenv("PIERRE_API_KEY") or ""),
         }
     return out

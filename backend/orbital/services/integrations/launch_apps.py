@@ -27,7 +27,7 @@ def launch_apps_config_path() -> Path:
 
 def load_launch_apps_config() -> Dict[str, Any]:
     try:
-        from .supabase_remote_config import (
+        from orbital.services.supabase.remote_config import (
             get_cached_launch_apps_config,
             supabase_config_enabled,
         )
@@ -62,7 +62,7 @@ def load_launch_apps_config() -> Dict[str, Any]:
 def save_launch_apps_config(cfg: Dict[str, Any]) -> Tuple[bool, str]:
     """Persiste JSON sem chaves internas (_error, etc.). No modo Supabase não grava arquivo."""
     try:
-        from .supabase_remote_config import supabase_config_enabled
+        from orbital.services.supabase.remote_config import supabase_config_enabled
 
         if supabase_config_enabled():
             return True, ""
@@ -185,7 +185,7 @@ def add_launch_app_entry(
     }
 
     try:
-        from .supabase_remote_config import insert_launch_app_supabase, supabase_config_enabled
+        from orbital.services.supabase.remote_config import insert_launch_app_supabase, supabase_config_enabled
     except ImportError:
         supabase_config_enabled = lambda: False  # noqa: E731
         insert_launch_app_supabase = None

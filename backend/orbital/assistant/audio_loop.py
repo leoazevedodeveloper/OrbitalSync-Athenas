@@ -10,6 +10,9 @@ import struct
 import sys
 import time
 import traceback
+import uuid
+from datetime import datetime
+from zoneinfo import ZoneInfo
 
 import cv2
 import PIL.Image
@@ -26,7 +29,7 @@ if sys.version_info < (3, 11, 0):
     asyncio.TaskGroup = taskgroup.TaskGroup
     asyncio.ExceptionGroup = exceptiongroup.ExceptionGroup
 
-from orbital.services.comfyui_client import generate_image_via_comfyui, resolved_comfyui_workflow_path
+from orbital.services.integrations.comfyui_client import generate_image_via_comfyui, resolved_comfyui_workflow_path
 
 
 def _chat_startup_history_limit() -> int:
@@ -44,8 +47,13 @@ def _chat_startup_history_limit() -> int:
         return max(10, min(500, int(SETTINGS.get("chat_startup_context_limit", 100))))
     except Exception:
         return 100
-from orbital.services.launch_apps import launch_app_by_id, list_launch_apps_catalog
-from orbital.services.webhook_config import (
+from orbital.services.integrations.launch_apps import launch_app_by_id, list_launch_apps_catalog
+from orbital.services.integrations.agenda_google import (
+    delete_google_calendar_event,
+    find_google_event_id_for_title_at,
+)
+from orbital.services.integrations.webhook_config import (
+    ATHENA_GOOGLE_CALENDAR_HOOK_ID,
     coerce_tool_args,
     fire_webhook_by_id,
     load_webhooks_config,
@@ -74,6 +82,33 @@ def _leaf_exceptions(exc: BaseException):
         yield exc
 
 
+def _parse_reminder_starts_at(raw: str):
+    """Retorna (unix_timestamp ou None, mensagem de erro ou None)."""
+    s = str(raw or "").strip()
+    if not s:
+        return None, "data/hora vazia"
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    try:
+        dt = datetime.fromisoformat(s)
+    except ValueError:
+        return None, "ISO 8601 inválido"
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("America/Sao_Paulo"))
+    return dt.timestamp(), None
+
+
+def _normalize_reminder_iso(raw: str) -> str:
+    """ISO 8601 normalizado para envio ao n8n (mesma lógica de fuso que starts)."""
+    s = str(raw or "").strip()
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
+    dt = datetime.fromisoformat(s)
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=ZoneInfo("America/Sao_Paulo"))
+    return dt.isoformat()
+
+
 class AudioLoop:
     def __init__(
         self,
@@ -85,6 +120,8 @@ class AudioLoop:
         on_project_update=None,
         on_error=None,
         on_image_generated=None,
+        on_timer_event=None,
+        on_calendar_event=None,
         on_runtime_log=None,
         input_device_index=None,
         input_device_name=None,
@@ -102,6 +139,8 @@ class AudioLoop:
         self.on_project_update = on_project_update
         self.on_error = on_error
         self.on_image_generated = on_image_generated
+        self.on_timer_event = on_timer_event
+        self.on_calendar_event = on_calendar_event
         self.on_runtime_log = on_runtime_log
         self.input_device_index = input_device_index
         self.input_device_name = input_device_name
@@ -148,6 +187,7 @@ class AudioLoop:
         
         self.permissions = {} # Default Empty (Will treat unset as True)
         self._pending_confirmations = {}
+        self._assistant_timer_tasks: set = set()
 
         # Video buffering state
         self._latest_image_payload = None
@@ -295,7 +335,47 @@ class AudioLoop:
 
     def stop(self):
         self.stop_event.set()
-        
+        for t in list(self._assistant_timer_tasks):
+            if not t.done():
+                t.cancel()
+
+    async def _assistant_timer_wait(self, timer_id: str, duration_sec: float, label: str) -> None:
+        """Espera `duration_sec` ou até `stop_event`; notifica o front e pede uma fala curta ao Live."""
+        try:
+            await asyncio.wait_for(self.stop_event.wait(), timeout=duration_sec)
+            return
+        except asyncio.TimeoutError:
+            pass
+        if self.stop_event.is_set():
+            return
+        cb = self.on_timer_event
+        if cb:
+            try:
+                cb({"event": "finished", "id": timer_id, "label": label or ""})
+            except Exception:
+                pass
+        await self._notify_timer_finished_speech(label)
+
+    async def _notify_timer_finished_speech(self, label: str) -> None:
+        """Injecta aviso na sessão Live para a ATHENAS falar que o cronómetro zerou."""
+        if self.stop_event.is_set():
+            return
+        session = getattr(self, "session", None)
+        if session is None:
+            return
+        label_bit = f" Rótulo: {label}." if (label or "").strip() else ""
+        msg = (
+            "System notification: O cronómetro que Leo pediu acabou de terminar."
+            f"{label_bit} "
+            "Diga em voz UMA frase bem curta em português do Brasil (ex.: 'Leo, tempo esgotado.'). "
+            "Não repitas a mesma ideia duas vezes. Não voltes a dizer que o temporizador tinha sido iniciado."
+        )
+        try:
+            async with self._session_send_lock:
+                await session.send(input=msg, end_of_turn=True)
+        except Exception as e:
+            print(f"[ADA DEBUG] [TIMER] notify speech failed: {e!r}")
+
     def resolve_tool_confirmation(self, request_id, confirmed):
         print(f"[ADA DEBUG] [RESOLVE] resolve_tool_confirmation called. ID: {request_id}, Confirmed: {confirmed}")
         if request_id in self._pending_confirmations:
@@ -832,9 +912,16 @@ class AudioLoop:
         except Exception as e:
             raise RuntimeError(f"Falha ao gerar imagem via ComfyUI: {e!r}") from e
 
-    def _format_webhook_tool_result(self, hook_id: str, status: int, text: str) -> str:
+    def _format_webhook_tool_result(
+        self,
+        hook_id: str,
+        status: int,
+        text: str,
+        *,
+        integration_hint: str | None = None,
+    ) -> str:
         """
-        Retorno explícito para o modelo: [SUCCESS] / [FAILED], evitando 'alucinar' que o Spotify obedeceu.
+        Retorno explícito para o modelo: [SUCCESS] / [FAILED], evitando 'alucinar' que a integração obedeceu sem evidência no retorno.
         """
         snippet = (text or "").strip()[:1200]
         # status 0 = erro antes do HTTP (ex.: hook_id desconhecido)
@@ -848,7 +935,11 @@ class AudioLoop:
             try:
                 parsed = json.loads(snippet)
                 if isinstance(parsed, dict) and "ok" in parsed:
-                    n8n_ok = bool(parsed.get("ok"))
+                    raw_ok = parsed.get("ok")
+                    if isinstance(raw_ok, str):
+                        n8n_ok = raw_ok.strip().lower() in ("1", "true", "yes")
+                    else:
+                        n8n_ok = bool(raw_ok)
             except json.JSONDecodeError:
                 pass
 
@@ -859,13 +950,23 @@ class AudioLoop:
         else:
             tag = "[SUCCESS]"
 
-        hint = (
-            "Spotify often needs Premium + app open + an active device with recent playback; "
-            "resume/play can silently fail if there is no active player."
-        )
+        if integration_hint == "spotify":
+            hint = (
+                "Spotify often needs Premium + app open + an active device with recent playback; "
+                "resume/play can silently fail if there is no active player."
+            )
+        elif integration_hint == "google_calendar":
+            hint = (
+                "Google Calendar via n8n needs the workflow active and OAuth credentials; "
+                "if it failed, check n8n execution logs."
+            )
+        else:
+            hint = ""
+
+        hint_part = f"{hint} " if hint else ""
         return (
             f"{tag} webhook={hook_id!r} http_status={status}. "
-            f"{hint} "
+            f"{hint_part}"
             f"n8n_body_snippet={snippet!r}"
         )
 
@@ -874,7 +975,8 @@ class AudioLoop:
         cfg = load_webhooks_config()
         extra = normalize_trigger_webhook_payload(payload, None)
         status, text = await fire_webhook_by_id(cfg, hook_id, extra)
-        return self._format_webhook_tool_result(hook_id, status, text)
+        ih = "spotify" if hook_id == "athena-spotify" else None
+        return self._format_webhook_tool_result(hook_id, status, text, integration_hint=ih)
 
     async def receive_audio(self):
         "Background task to reads from the websocket and write pcm chunks to the output queue"
@@ -997,7 +1099,264 @@ class AudioLoop:
                                 "launch_app",
                                 "trigger_webhook",
                                 "search_chat_history",
+                                "start_timer",
+                                "add_calendar_reminder",
+                                "remove_calendar_reminder",
                             ]:
+                                if fc.name == "start_timer":
+                                    args_map = coerce_tool_args(fc.args)
+                                    raw_dur = args_map.get("duration_seconds", 0)
+                                    try:
+                                        duration_sec = float(raw_dur)
+                                    except (TypeError, ValueError):
+                                        duration_sec = 0
+                                    duration_sec = int(round(duration_sec))
+                                    duration_sec = max(1, min(7200, duration_sec))
+                                    label = str(args_map.get("label") or "").strip()
+                                    timer_id = str(uuid.uuid4())
+                                    ends_at = time.time() + duration_sec
+                                    if self.on_timer_event:
+                                        try:
+                                            self.on_timer_event(
+                                                {
+                                                    "event": "started",
+                                                    "id": timer_id,
+                                                    "label": label,
+                                                    "duration_seconds": duration_sec,
+                                                    "ends_at": ends_at,
+                                                }
+                                            )
+                                        except Exception:
+                                            pass
+                                    t = asyncio.create_task(
+                                        self._assistant_timer_wait(timer_id, float(duration_sec), label)
+                                    )
+                                    self._assistant_timer_tasks.add(t)
+                                    t.add_done_callback(
+                                        lambda task, s=self: s._assistant_timer_tasks.discard(task)
+                                    )
+                                    function_responses.append(
+                                        types.FunctionResponse(
+                                            id=fc.id,
+                                            name=fc.name,
+                                            response={
+                                                "result": (
+                                                    f"[start_timer OK] {duration_sec}s. UI shows countdown. "
+                                                    "NEXT SPEECH: one tiny Portuguese ack only (e.g. 'Combinado, Leo')—"
+                                                    "NO restating seconds, NO second sentence about starting, "
+                                                    "NO 'iniciado' if you already said 'iniciando' (pick one idea or neither). "
+                                                    "DO NOT say time is up until a separate system notification; "
+                                                    "never bundle start+end in the same reply."
+                                                ),
+                                            },
+                                        )
+                                    )
+                                    continue
+
+                                if fc.name == "add_calendar_reminder":
+                                    args_map = coerce_tool_args(fc.args)
+                                    title = str(args_map.get("title") or "").strip()
+                                    iso = str(args_map.get("starts_at_iso") or "").strip()
+                                    ts, parse_err = _parse_reminder_starts_at(iso)
+                                    if not title or ts is None:
+                                        err = parse_err or "título ou data inválidos"
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id,
+                                                name=fc.name,
+                                                response={
+                                                    "result": (
+                                                        f"[add_calendar_reminder FAILED] {err}. "
+                                                        "Corrija title e starts_at_iso (ex.: 2026-04-02T15:00:00-03:00)."
+                                                    ),
+                                                },
+                                            )
+                                        )
+                                        continue
+                                    ends_raw = str(args_map.get("ends_at_iso") or "").strip()
+                                    ends_iso_norm: str | None = None
+                                    if ends_raw:
+                                        try:
+                                            ends_iso_norm = _normalize_reminder_iso(ends_raw)
+                                        except ValueError:
+                                            function_responses.append(
+                                                types.FunctionResponse(
+                                                    id=fc.id,
+                                                    name=fc.name,
+                                                    response={
+                                                        "result": (
+                                                            "[add_calendar_reminder FAILED] ends_at_iso inválido. "
+                                                            "Use o mesmo formato ISO 8601 com fuso que starts_at_iso."
+                                                        ),
+                                                    },
+                                                )
+                                            )
+                                            continue
+                                    notes = str(args_map.get("notes") or "").strip()
+                                    try:
+                                        starts_iso_norm = _normalize_reminder_iso(iso)
+                                    except ValueError:
+                                        starts_iso_norm = iso
+
+                                    wh_payload: dict = {
+                                        "title": title,
+                                        "starts_at_iso": starts_iso_norm,
+                                    }
+                                    if ends_iso_norm:
+                                        wh_payload["ends_at_iso"] = ends_iso_norm
+                                    if notes:
+                                        wh_payload["notes"] = notes
+
+                                    cfg = load_webhooks_config()
+                                    try:
+                                        wh_status, wh_text = await fire_webhook_by_id(
+                                            cfg,
+                                            ATHENA_GOOGLE_CALENDAR_HOOK_ID,
+                                            wh_payload,
+                                        )
+                                    except Exception as e:
+                                        wh_status, wh_text = (
+                                            0,
+                                            json.dumps(
+                                                {
+                                                    "ok": False,
+                                                    "message": f"webhook exception: {e!r}",
+                                                }
+                                            ),
+                                        )
+                                    wh_line = self._format_webhook_tool_result(
+                                        ATHENA_GOOGLE_CALENDAR_HOOK_ID,
+                                        wh_status,
+                                        wh_text,
+                                        integration_hint="google_calendar",
+                                    )
+
+                                    google_event_id: str | None = None
+                                    if 200 <= wh_status < 300 and wh_text:
+                                        try:
+                                            wd = json.loads(wh_text)
+                                            if wd.get("ok") and isinstance(wd.get("data"), dict):
+                                                raw_gid = wd["data"].get("id")
+                                                if raw_gid is not None:
+                                                    google_event_id = str(raw_gid).strip() or None
+                                        except (json.JSONDecodeError, TypeError):
+                                            pass
+
+                                    reminder_id = str(uuid.uuid4())
+                                    if self.on_calendar_event:
+                                        try:
+                                            cal_payload: dict = {
+                                                "event": "reminder_added",
+                                                "id": reminder_id,
+                                                "title": title,
+                                                "starts_at_ms": int(ts * 1000),
+                                                "starts_at_iso": iso,
+                                            }
+                                            if google_event_id:
+                                                cal_payload["google_event_id"] = google_event_id
+                                            self.on_calendar_event(cal_payload)
+                                        except Exception:
+                                            pass
+
+                                    if wh_status <= 0 and "Unknown hook_id" in (wh_text or ""):
+                                        wh_line = (
+                                            f"{wh_line} "
+                                            "Só a agenda local foi atualizada; defina o hook "
+                                            f"{ATHENA_GOOGLE_CALENDAR_HOOK_ID!r} em webhooks.json ou Supabase athena_webhooks."
+                                        )
+
+                                    function_responses.append(
+                                        types.FunctionResponse(
+                                            id=fc.id,
+                                            name=fc.name,
+                                            response={
+                                                "result": (
+                                                    "[add_calendar_reminder OK] Agenda local atualizada; "
+                                                    "n8n/Google Calendar: ver linha seguinte. "
+                                                    f"{wh_line} "
+                                                    "NEXT SPEECH: one short Portuguese line only — confirme conforme o resultado "
+                                                    "(ex.: sucesso no Calendar ou erro honesto se [FAILED])."
+                                                ),
+                                            },
+                                        )
+                                    )
+                                    continue
+
+                                if fc.name == "remove_calendar_reminder":
+                                    args_map = coerce_tool_args(fc.args)
+                                    gid = str(args_map.get("google_event_id") or "").strip()
+                                    title_rm = str(args_map.get("title") or "").strip()
+                                    iso_rm = str(args_map.get("starts_at_iso") or "").strip()
+                                    if not gid:
+                                        if title_rm and iso_rm:
+                                            found, ferr = await find_google_event_id_for_title_at(title_rm, iso_rm)
+                                            if not found:
+                                                function_responses.append(
+                                                    types.FunctionResponse(
+                                                        id=fc.id,
+                                                        name=fc.name,
+                                                        response={
+                                                            "result": (
+                                                                f"[remove_calendar_reminder FAILED] {ferr}. "
+                                                                "Tente trigger_webhook com calendar_op list nesse período ou peça o id do evento."
+                                                            ),
+                                                        },
+                                                    )
+                                                )
+                                                continue
+                                            gid = found
+                                        else:
+                                            function_responses.append(
+                                                types.FunctionResponse(
+                                                    id=fc.id,
+                                                    name=fc.name,
+                                                    response={
+                                                        "result": (
+                                                            "[remove_calendar_reminder FAILED] "
+                                                            "Defina google_event_id OU (title e starts_at_iso) para localizar o evento."
+                                                        ),
+                                                    },
+                                                )
+                                            )
+                                            continue
+                                    ok_del, dmsg = await delete_google_calendar_event(gid)
+                                    if ok_del and self.on_calendar_event:
+                                        try:
+                                            self.on_calendar_event(
+                                                {
+                                                    "event": "google_event_removed",
+                                                    "google_event_id": gid,
+                                                }
+                                            )
+                                        except Exception:
+                                            pass
+                                    if ok_del:
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id,
+                                                name=fc.name,
+                                                response={
+                                                    "result": (
+                                                        f"[remove_calendar_reminder OK] Evento Google apagado (id={gid!r}). "
+                                                        f"{dmsg or 'NEXT SPEECH: confirmação curta em português.'}"
+                                                    ),
+                                                },
+                                            )
+                                        )
+                                    else:
+                                        function_responses.append(
+                                            types.FunctionResponse(
+                                                id=fc.id,
+                                                name=fc.name,
+                                                response={
+                                                    "result": (
+                                                        f"[remove_calendar_reminder FAILED] {dmsg or 'Erro ao apagar no Google.'}"
+                                                    ),
+                                                },
+                                            )
+                                        )
+                                    continue
+
                                 prompt = fc.args.get("prompt", "") # Prompt is not present for all tools
                                 
                                 # Check Permissions (Default to True if not set)
@@ -1010,7 +1369,6 @@ class AudioLoop:
                                 else:
                                     # Confirmation Logic
                                     if self.on_tool_confirmation:
-                                        import uuid
                                         request_id = str(uuid.uuid4())
                                     print(f"[ADA DEBUG] [STOP] Requesting confirmation for '{fc.name}' (ID: {request_id})")
                                     

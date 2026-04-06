@@ -1,1 +1,8 @@
-"""Integrações e utilitários de domínio (auth facial, apps, webhooks, projetos, tools Gemini)."""
+"""
+Serviços de domínio.
+
+- ``supabase/`` — PostgREST, histórico remoto, embeddings
+- ``integrations/`` — ComfyUI, webhooks, launch apps, testes de conectividade
+- ``config/`` — credenciais locais e `.env``
+- Raiz — ``project_manager``, ``authenticator``, ``tools`` (Gemini)
+"""

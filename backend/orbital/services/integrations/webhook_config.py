@@ -16,6 +16,68 @@ from orbital.paths import REPO_ROOT
 
 _ENV_PATTERN = re.compile(r"\$\{([A-Z0-9_]+)\}")
 
+"""Id fixo usado por add_calendar_reminder e pelo n8n (path athena-google-calendar)."""
+ATHENA_GOOGLE_CALENDAR_HOOK_ID = "athena-google-calendar"
+
+_DEFAULT_CALENDAR_URL = (
+    (os.getenv("ATHENA_GOOGLE_CALENDAR_WEBHOOK_URL") or "").strip()
+    or "https://n8n.orbitalsync.site/webhook/athena-google-calendar"
+)
+
+_DISABLE_DEFAULT_CALENDAR_HOOK = (os.getenv("ORBITAL_DISABLE_DEFAULT_CALENDAR_WEBHOOK") or "").strip().lower() in (
+    "1",
+    "true",
+    "yes",
+)
+
+_SPOTIFY_NOISE_ACTIONS = frozenset(
+    {
+        "pause",
+        "play",
+        "resume",
+        "start",
+        "unpause",
+        "continue",
+        "continuar",
+        "continua",
+        "retomar",
+        "despausar",
+        "tocar",
+        "next",
+        "skip",
+        "previous",
+        "back",
+        "volume",
+        "playlist",
+        "play_playlist",
+    }
+)
+
+
+def _strip_spotify_noise_action(body: Dict[str, Any]) -> None:
+    """Evita `action: pause` herdado do body default do hook Spotify no merge com Calendar."""
+    act = body.get("action")
+    if isinstance(act, str) and act.lower().strip() in _SPOTIFY_NOISE_ACTIONS:
+        body.pop("action", None)
+
+
+def _hook_for_fire(cfg: Dict[str, Any], hook_id: str) -> Optional[Dict[str, Any]]:
+    h = get_hook_by_id(cfg, hook_id)
+    if h is not None:
+        return h
+    if (
+        hook_id == ATHENA_GOOGLE_CALENDAR_HOOK_ID
+        and not _DISABLE_DEFAULT_CALENDAR_HOOK
+        and _DEFAULT_CALENDAR_URL
+    ):
+        return {
+            "id": hook_id,
+            "description": "n8n Google Calendar (fallback quando ausente em athena_webhooks)",
+            "url": _DEFAULT_CALENDAR_URL,
+            "body": {},
+        }
+    return None
+
 
 def _substitute_env(obj: Any) -> Any:
     if isinstance(obj, str):
@@ -39,9 +101,60 @@ def webhooks_config_path() -> Path:
     return project_root() / "config" / "webhooks.json"
 
 
-def load_webhooks_config() -> Dict[str, Any]:
+def _read_local_webhooks_file() -> Optional[Dict[str, Any]]:
+    """Lê config/webhooks.json. Não há push automático para o Supabase — só leitura local."""
+    path = webhooks_config_path()
+    if not path.is_file():
+        return None
     try:
-        from .supabase_remote_config import (
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        if not isinstance(data, dict):
+            return None
+        if "hooks" not in data or not isinstance(data["hooks"], list):
+            data = {**data, "hooks": []}
+        return data
+    except Exception:
+        return None
+
+
+def _merge_webhooks_configs(
+    primary: Dict[str, Any],
+    supplemental: Optional[Dict[str, Any]],
+) -> Dict[str, Any]:
+    """
+    Supabase (ou cache remoto) tem prioridade nos ids que já existem.
+    Hooks que existem só em supplemental (webhooks.json) são acrescentados.
+    Não substitui URL/body de um hook já vindo do remoto.
+    """
+    if not supplemental:
+        return copy.deepcopy(primary)
+    out = copy.deepcopy(primary)
+    p_hooks = out.get("hooks")
+    if not isinstance(p_hooks, list):
+        p_hooks = []
+        out["hooks"] = p_hooks
+    ids = {
+        str(h.get("id")).strip()
+        for h in p_hooks
+        if isinstance(h, dict) and str(h.get("id") or "").strip()
+    }
+    s_hooks = supplemental.get("hooks") if isinstance(supplemental.get("hooks"), list) else []
+    for h in s_hooks:
+        if not isinstance(h, dict):
+            continue
+        hid = str(h.get("id") or "").strip()
+        if not hid or hid in ids:
+            continue
+        p_hooks.append(copy.deepcopy(h))
+        ids.add(hid)
+    return out
+
+
+def load_webhooks_config() -> Dict[str, Any]:
+    local = _read_local_webhooks_file()
+    try:
+        from orbital.services.supabase.remote_config import (
             empty_webhooks_config,
             get_cached_webhooks_config,
             supabase_config_enabled,
@@ -49,23 +162,19 @@ def load_webhooks_config() -> Dict[str, Any]:
 
         if supabase_config_enabled():
             remote = get_cached_webhooks_config()
-            return remote if remote is not None else empty_webhooks_config()
+            if remote is not None:
+                return _merge_webhooks_configs(remote, local)
+            base = empty_webhooks_config()
+            return _merge_webhooks_configs(base, local)
         remote = get_cached_webhooks_config()
         if remote is not None:
-            return remote
+            return _merge_webhooks_configs(remote, local)
     except Exception:
         pass
 
-    path = webhooks_config_path()
-    if not path.is_file():
-        return {"version": 1, "hooks": []}
-    with open(path, "r", encoding="utf-8") as f:
-        data = json.load(f)
-    if not isinstance(data, dict):
-        return {"version": 1, "hooks": []}
-    if "hooks" not in data or not isinstance(data["hooks"], list):
-        data["hooks"] = []
-    return data
+    if local is not None:
+        return copy.deepcopy(local)
+    return {"version": 1, "hooks": []}
 
 
 def get_hook_by_id(cfg: Dict[str, Any], hook_id: str) -> Optional[Dict[str, Any]]:
@@ -252,7 +361,7 @@ async def fire_webhook_by_id(
     hook_id: str,
     payload_extra: Optional[Dict[str, Any]] = None,
 ) -> Tuple[int, str]:
-    hook = get_hook_by_id(cfg, hook_id)
+    hook = _hook_for_fire(cfg, hook_id)
     if not hook:
         return 0, f"Unknown hook_id: {hook_id}"
 
@@ -273,21 +382,27 @@ async def fire_webhook_by_id(
         {} if raw_body is None else raw_body,
         payload_extra,
     )
+    if hook_id == ATHENA_GOOGLE_CALENDAR_HOOK_ID and isinstance(body, dict):
+        _strip_spotify_noise_action(body)
     body = _substitute_env(body)
     print(f"[WEBHOOK] hook_id={hook_id!r} POST body={body!r}")
 
     timeout = float(hook.get("timeout_sec") or g.get("default_timeout_sec") or 30)
 
-    async with httpx.AsyncClient(timeout=timeout) as client:
-        if method in ("GET", "HEAD"):
-            r = await client.request(method, url, headers=headers)
-        else:
-            r = await client.request(
-                method,
-                url,
-                headers=headers,
-                json=body if isinstance(body, (dict, list)) else body,
-            )
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            if method in ("GET", "HEAD"):
+                r = await client.request(method, url, headers=headers)
+            else:
+                r = await client.request(
+                    method,
+                    url,
+                    headers=headers,
+                    json=body if isinstance(body, (dict, list)) else body,
+                )
+    except httpx.RequestError as e:
+        err_text = f'{{"ok":false,"message":"HTTP client error: {str(e)[:500]}"}}'
+        return 0, err_text
 
     snippet = (r.text or "")[:2000]
     return r.status_code, snippet

@@ -13,7 +13,7 @@ from urllib.parse import quote
 
 import httpx
 
-from orbital.services.supabase_remote_config import (
+from .remote_config import (
     _base_url,
     _rest_headers,
     supabase_config_enabled,
@@ -83,7 +83,7 @@ def append_chat_message(
             elif isinstance(body, dict):
                 rid = body.get("id")
             if rid and str(text).strip():
-                from orbital.services.chat_embeddings import schedule_embed_for_message
+                from .chat_embeddings import schedule_embed_for_message
 
                 schedule_embed_for_message(str(rid), text, sender=sender)
         return True
@@ -180,7 +180,7 @@ def _search_messages_ilike(
 
 def _search_semantic(project_name: str, q: str, lim: int) -> Optional[List[dict]]:
     """Busca por similaridade (pgvector). None = indisponível/erro; [] = sem resultados."""
-    from orbital.services.chat_embeddings import rpc_match_semantic
+    from .chat_embeddings import rpc_match_semantic
 
     rows = rpc_match_semantic(project_name, q, lim)
     if rows is None:

@@ -1,5 +1,5 @@
 import React from 'react';
-import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand } from 'lucide-react';
+import { Mic, MicOff, Settings, Power, Video, VideoOff, Hand, CalendarDays, Landmark } from 'lucide-react';
 
 const iconSize = 17;
 const stroke = 1.35;
@@ -10,6 +10,10 @@ const ToolsModule = ({
     isVideoOn,
     isHandTrackingEnabled,
     showSettings,
+    agendaOpen,
+    financeOpen,
+    onToggleAgenda,
+    onToggleFinance,
     onTogglePower,
     onToggleMute,
     onToggleVideo,
@@ -101,6 +105,19 @@ const ToolsModule = ({
 
                 <button
                     type="button"
+                    onClick={onToggleAgenda}
+                    title={agendaOpen ? 'Ocultar agenda' : 'Agenda / calendário'}
+                    className={`${base} ${
+                        agendaOpen
+                            ? 'text-cyan-200/95 bg-cyan-500/[0.12] hover:bg-cyan-500/[0.16]'
+                            : idle
+                    }`}
+                >
+                    <CalendarDays size={iconSize} strokeWidth={stroke} className="relative z-[1]" />
+                </button>
+
+                <button
+                    type="button"
                     onClick={onToggleSettings}
                     title="Configurações"
                     className={`${base} ${
@@ -110,6 +127,19 @@ const ToolsModule = ({
                     }`}
                 >
                     <Settings size={iconSize} strokeWidth={stroke} />
+                </button>
+
+                <button
+                    type="button"
+                    onClick={onToggleFinance}
+                    title={financeOpen ? 'Ocultar financeiro' : 'Financeiro'}
+                    className={`${base} ${
+                        financeOpen
+                            ? 'text-emerald-200/95 bg-emerald-500/[0.12] hover:bg-emerald-500/[0.16]'
+                            : idle
+                    }`}
+                >
+                    <Landmark size={iconSize} strokeWidth={stroke} />
                 </button>
 
                 <button

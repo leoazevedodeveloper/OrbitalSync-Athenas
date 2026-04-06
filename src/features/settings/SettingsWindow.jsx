@@ -1229,9 +1229,17 @@ function IntegrationsHubSection({
                                             {(n8n?.hooks_count ?? 0) > 0 ? `${n8n.hooks_count} hooks` : 'Sem hooks'}
                                         </IntegrationStatusPill>
                                     </div>
-                                    <p className="mb-2 line-clamp-2 text-[10px] leading-snug text-zinc-400">
+                                    <p className="mb-2 text-[10px] leading-snug text-zinc-400">
                                         Tool <strong className="text-zinc-400">trigger_webhook</strong> · origem:{' '}
                                         {n8n?.webhooks_source === 'supabase' ? 'Supabase' : 'webhooks.json'}.
+                                        {n8n?.webhooks_source === 'supabase' ? (
+                                            <>
+                                                {' '}
+                                                Hooks em <code className="text-zinc-500">config/webhooks.json</code> entram em{' '}
+                                                <em className="not-italic text-zinc-300">merge</em> só para ids que ainda não existem
+                                                no remoto (o app não envia o ficheiro ao Supabase).
+                                            </>
+                                        ) : null}
                                     </p>
                                     {(n8n?.hooks_preview?.length ?? 0) > 0 ? (
                                         <ul className="max-h-[4.5rem] space-y-1 overflow-y-auto pr-1 text-[10px]">

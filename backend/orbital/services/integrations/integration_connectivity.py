@@ -30,8 +30,10 @@ def _webhook_post_probe_eligible(url: str) -> bool:
     return "/webhook" in u
 
 
-from .supabase_remote_config import _base_url, _rest_headers, supabase_config_enabled
-from .webhook_config import load_webhooks_config
+from orbital.services.supabase.remote_config import _base_url, _rest_headers, supabase_config_enabled
+
+from .agenda_google import calendar_connectivity_probe_payload
+from .webhook_config import ATHENA_GOOGLE_CALENDAR_HOOK_ID, load_webhooks_config
 
 
 def _ms(t0: float) -> int:
@@ -202,9 +204,13 @@ def _probe_url(client: httpx.Client, url: str, hook_id: str = "") -> tuple[bool,
 
     if try_post_after_get_404:
         try:
+            cal_hook = (hook_id or "").strip() == ATHENA_GOOGLE_CALENDAR_HOOK_ID or (
+                "athena-google-calendar" in (url or "").lower()
+            )
+            probe_json = calendar_connectivity_probe_payload() if cal_hook else {"action": "__orbital_connectivity_probe__"}
             r = client.post(
                 url,
-                json={"action": "__orbital_connectivity_probe__"},
+                json=probe_json,
                 headers={"Content-Type": "application/json"},
                 timeout=httpx.Timeout(12.0, connect=2.5),
             )

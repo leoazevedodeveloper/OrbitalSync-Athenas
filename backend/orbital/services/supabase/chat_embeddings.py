@@ -12,7 +12,7 @@ from typing import List, Optional, Set
 import httpx
 from google.genai import types
 
-from orbital.services.supabase_remote_config import (
+from .remote_config import (
     _base_url,
     _rest_headers,
     supabase_config_enabled,

@@ -8,17 +8,17 @@ import socketio
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse
 
-from orbital.services.local_credentials import reload_env_from_dotenv_and_file
+from orbital.services.config.local_credentials import reload_env_from_dotenv_and_file
 
 # `.env` + `data/local_credentials.json` antes de importar handlers (Gemini lê GEMINI_API_KEY aqui).
 reload_env_from_dotenv_and_file()
 
 from orbital.settings import SETTINGS, apply_semantic_memory_defaults
-from orbital.services.comfyui_client import safe_comfyui_imagens_file
-from orbital.services.supabase_remote_config import try_apply_supabase_config
+from orbital.services.integrations.comfyui_client import safe_comfyui_imagens_file
+from orbital.services.supabase.remote_config import try_apply_supabase_config
 
 from . import state as st
-from .handlers import register_socket_handlers
+from .socket_handlers import register_socket_handlers
 
 try:
     try_apply_supabase_config(SETTINGS)

@@ -29,7 +29,7 @@ def load_settings() -> None:
     SETTINGS.clear()
     SETTINGS["tool_permissions"] = {}
     try:
-        from orbital.services.supabase_remote_config import (
+        from orbital.services.supabase.remote_config import (
             supabase_config_enabled,
             try_apply_supabase_config,
         )
@@ -48,7 +48,7 @@ def load_settings() -> None:
 
 def save_settings() -> None:
     try:
-        from orbital.services.supabase_remote_config import (
+        from orbital.services.supabase.remote_config import (
             persist_settings_to_supabase,
             supabase_config_enabled,
         )
