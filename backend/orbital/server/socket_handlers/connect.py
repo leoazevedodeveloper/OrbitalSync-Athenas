@@ -41,6 +41,14 @@ def register_connect_handlers(sio, emit_runtime_log):
                 print("Face Auth Disabled. Auto-authenticating.")
                 await sio.emit("auth_status", {"authenticated": True})
 
+        async def push_integration_health():
+            """Testes de integração no connect — o dock de health já chega preenchido ao sair do boot."""
+            from .settings_handlers import emit_integration_tests_for_client
+
+            await emit_integration_tests_for_client(sio, sid)
+
+        asyncio.create_task(push_integration_health())
+
     @sio.event
     async def disconnect(sid):
         print(f"Client disconnected: {sid}")

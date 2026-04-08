@@ -39,6 +39,7 @@ def append_chat_message(
     *,
     mime_type: Optional[str] = None,
     image_relpath: Optional[str] = None,
+    memory_salience: Optional[str] = None,
 ) -> bool:
     """
     Insere uma linha em `athena_chat_messages`. Retorna True se gravou no remoto.
@@ -51,6 +52,8 @@ def append_chat_message(
         meta["mime_type"] = mime_type
     if image_relpath:
         meta["image_relpath"] = image_relpath
+    if memory_salience:
+        meta["memory_salience"] = memory_salience
 
     row = {
         "project_name": project_name,

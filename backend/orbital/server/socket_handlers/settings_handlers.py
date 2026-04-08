@@ -21,6 +21,31 @@ from .. import state as st
 from .common import append_settings_runtime_fields
 
 
+async def emit_integration_tests_for_client(sio, sid: str) -> None:
+    """Ping Supabase, ComfyUI, webhooks e Ollama; emite `integration_test_result` para o cliente."""
+    try:
+        from orbital.services.integrations.integration_connectivity import run_all_integration_tests
+
+        comfy_base = (os.getenv("COMFYUI_BASE_URL") or "http://127.0.0.1:2000").strip().rstrip("/")
+        ollama_raw = (os.getenv("ORBITAL_MEMORY_OLLAMA_URL") or "").strip().rstrip("/")
+        if not ollama_raw:
+            ollama_raw = str(SETTINGS.get("memory_ollama_url") or "").strip().rstrip("/")
+        if not ollama_raw:
+            ollama_raw = "http://127.0.0.1:11434"
+        results = await asyncio.to_thread(run_all_integration_tests, comfy_base, ollama_raw)
+        await sio.emit(
+            "integration_test_result",
+            {"ok": True, "results": results},
+            room=sid,
+        )
+    except Exception as e:
+        await sio.emit(
+            "integration_test_result",
+            {"ok": False, "error": str(e)[:500]},
+            room=sid,
+        )
+
+
 def register_settings_handlers(sio, emit_runtime_log, emit_full_settings):
     @sio.event
     async def get_settings(sid):
@@ -190,6 +215,10 @@ def register_settings_handlers(sio, emit_runtime_log, emit_full_settings):
                 val = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
                 if not val:
                     val = (os.getenv("SUPABASE_ANON_KEY") or "").strip()
+            elif field == "supabase_anon_key":
+                val = (os.getenv("SUPABASE_ANON_KEY") or "").strip()
+            elif field == "pierre_api_key":
+                val = (os.getenv("PIERRE_API_KEY") or "").strip()
             else:
                 await sio.emit(
                     "setting_secret_revealed",
@@ -217,23 +246,8 @@ def register_settings_handlers(sio, emit_runtime_log, emit_full_settings):
 
     @sio.event
     async def test_integrations(sid, data=None):
-        """Ping Supabase, ComfyUI e webhooks (HEAD/GET; em /webhook/ com GET 404, POST JSON de probe). Logs: ORBITAL_INTEGRATION_TEST_LOG=1."""
-        try:
-            from orbital.services.integrations.integration_connectivity import run_all_integration_tests
-
-            comfy_base = (os.getenv("COMFYUI_BASE_URL") or "http://127.0.0.1:2000").strip().rstrip("/")
-            results = await asyncio.to_thread(run_all_integration_tests, comfy_base)
-            await sio.emit(
-                "integration_test_result",
-                {"ok": True, "results": results},
-                room=sid,
-            )
-        except Exception as e:
-            await sio.emit(
-                "integration_test_result",
-                {"ok": False, "error": str(e)[:500]},
-                room=sid,
-            )
+        """Ping Supabase, ComfyUI, webhooks e Ollama (/api/tags). Logs: ORBITAL_INTEGRATION_TEST_LOG=1."""
+        await emit_integration_tests_for_client(sio, sid)
 
     @sio.event
     async def update_settings(sid, data):
@@ -290,6 +304,36 @@ def register_settings_handlers(sio, emit_runtime_log, emit_full_settings):
                 )
             except (TypeError, ValueError):
                 pass
+        if "memory_remote_selective" in data:
+            SETTINGS["memory_remote_selective"] = bool(data["memory_remote_selective"])
+        if "memory_full_remote" in data:
+            SETTINGS["memory_full_remote"] = bool(data["memory_full_remote"])
+        if "memory_ollama_gate_enabled" in data:
+            SETTINGS["memory_ollama_gate_enabled"] = bool(data["memory_ollama_gate_enabled"])
+        if "memory_gemini_gate_enabled" in data:
+            SETTINGS["memory_gemini_gate_enabled"] = bool(data["memory_gemini_gate_enabled"])
+        if "memory_gate_model" in data:
+            SETTINGS["memory_gate_model"] = str(data.get("memory_gate_model") or "").strip()
+        if "memory_ollama_model" in data:
+            SETTINGS["memory_ollama_model"] = str(data.get("memory_ollama_model") or "").strip()
+        if "memory_ollama_url" in data:
+            SETTINGS["memory_ollama_url"] = str(data.get("memory_ollama_url") or "").strip()
+        if "memory_gate_retries" in data:
+            try:
+                SETTINGS["memory_gate_retries"] = max(
+                    1, min(5, int(data["memory_gate_retries"]))
+                )
+            except (TypeError, ValueError):
+                pass
+        if "memory_gate_timeout_sec" in data:
+            try:
+                SETTINGS["memory_gate_timeout_sec"] = max(
+                    3.0, min(120.0, float(data["memory_gate_timeout_sec"]))
+                )
+            except (TypeError, ValueError):
+                pass
+        if "memory_salience_debug" in data:
+            SETTINGS["memory_salience_debug"] = bool(data["memory_salience_debug"])
 
         save_settings()
         await emit_full_settings()

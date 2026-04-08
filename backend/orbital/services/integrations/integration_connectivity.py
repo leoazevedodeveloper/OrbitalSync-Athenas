@@ -1,4 +1,4 @@
-"""Testes ativos de conectividade (Supabase, ComfyUI, webhooks) — sem expor segredos ao cliente."""
+"""Testes ativos de conectividade (Supabase, ComfyUI, webhooks, Ollama) — sem expor segredos ao cliente."""
 from __future__ import annotations
 
 import logging
@@ -151,6 +151,57 @@ def test_comfyui(base_url: str) -> Dict[str, Any]:
         "message": last_err or "ComfyUI não respondeu.",
         "latency_ms": _ms(t0),
     }
+
+
+def test_ollama(base_url: str) -> Dict[str, Any]:
+    """GET /api/tags — endpoint estável do servidor Ollama."""
+    t0 = time.perf_counter()
+    raw = (base_url or "").strip().rstrip("/")
+    if not raw:
+        return {
+            "ok": False,
+            "reachable": False,
+            "tier": "down",
+            "message": "URL Ollama vazia (memória ou ORBITAL_MEMORY_OLLAMA_URL).",
+            "latency_ms": _ms(t0),
+        }
+    timeout = httpx.Timeout(6.0, connect=2.5)
+    try:
+        with httpx.Client(timeout=timeout) as client:
+            r = client.get(f"{raw}/api/tags")
+        latency = _ms(t0)
+        code = r.status_code
+        tier = _http_tier(code)
+        if tier == "up":
+            msg = "Ollama respondeu (/api/tags)."
+        elif tier == "degraded":
+            msg = f"Resposta parcial (HTTP {code}). Ver URL e firewall."
+        else:
+            msg = f"HTTP {code}"
+        return {
+            "ok": tier == "up",
+            "reachable": code is not None,
+            "tier": tier,
+            "status_code": code,
+            "message": msg,
+            "latency_ms": latency,
+        }
+    except httpx.ConnectError as e:
+        return {
+            "ok": False,
+            "reachable": False,
+            "tier": "down",
+            "message": f"Sem conexão com Ollama: {e!s}"[:220],
+            "latency_ms": _ms(t0),
+        }
+    except Exception as e:
+        return {
+            "ok": False,
+            "reachable": False,
+            "tier": "down",
+            "message": str(e)[:220],
+            "latency_ms": _ms(t0),
+        }
 
 
 def _probe_url(client: httpx.Client, url: str, hook_id: str = "") -> tuple[bool, int | None, str, str]:
@@ -340,10 +391,11 @@ def test_webhooks_sample(max_hooks: int = 10) -> Dict[str, Any]:
     }
 
 
-def run_all_integration_tests(comfy_base_url: str) -> Dict[str, Any]:
-    """Executa os três testes (usado pelo Socket.IO)."""
+def run_all_integration_tests(comfy_base_url: str, ollama_base_url: str) -> Dict[str, Any]:
+    """Executa testes de conectividade (Socket.IO): Supabase, ComfyUI, webhooks, Ollama."""
     return {
         "supabase": test_supabase(),
         "comfyui": test_comfyui(comfy_base_url),
         "webhooks": test_webhooks_sample(),
+        "ollama": test_ollama(ollama_base_url),
     }

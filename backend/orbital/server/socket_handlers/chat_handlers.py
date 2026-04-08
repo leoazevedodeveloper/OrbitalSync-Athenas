@@ -100,7 +100,7 @@ def register_chat_handlers(sio):
             else:
                 pm = ProjectManager(str(PROJECT_ROOT))
 
-            history = pm.get_recent_chat_history(limit=limit)
+            history = pm.get_ui_chat_transcript(limit=limit)
             await sio.emit(
                 "chat_history",
                 {"project": pm.current_project, "messages": history},

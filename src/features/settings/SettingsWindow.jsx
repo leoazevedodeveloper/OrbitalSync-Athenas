@@ -26,7 +26,6 @@ import {
     KeyRound,
     Save,
     ChevronRight,
-    ChevronLeft,
     Bot,
     Brain,
     FileText,
@@ -38,6 +37,7 @@ import {
     Eye,
     EyeOff,
     ChevronDown,
+    Wallet,
 } from 'lucide-react';
 
 const TOOLS = [
@@ -236,10 +236,10 @@ function SecretCredentialField({ label, value, setValue, placeholder, configured
 function IntegrationStatusPill({ active, children }) {
     return (
         <span
-            className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-[10px] font-bold uppercase tracking-[0.14em] ${
+            className={`inline-flex items-center rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-[0.14em] ${
                 active
-                    ? 'border border-emerald-400/30 bg-emerald-500/15 text-emerald-200'
-                    : 'border border-white/10 bg-black/40 text-zinc-400'
+                    ? 'border border-emerald-400/35 bg-emerald-500/15 text-emerald-100 shadow-[0_0_16px_rgba(16,185,129,0.12)]'
+                    : 'border border-white/10 bg-black/45 text-zinc-500'
             }`}
         >
             {children}
@@ -347,18 +347,20 @@ function IntegrationProbeToggle({ data, webhookMode, testRunning }) {
 
     if (testRunning) {
         return (
-            <div className="mt-2 flex items-center gap-2 rounded-lg border border-white/8 bg-black/25 px-2.5 py-1.5 text-[10px] text-zinc-400">
+            <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-cyan-500/20 bg-cyan-950/25 px-3 py-2 text-[10px] text-cyan-100/90">
                 <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-cyan-400/90" aria-hidden />
-                <span>A testar…</span>
+                <span>A testar ligação…</span>
             </div>
         );
     }
 
     if (!data) {
         return (
-            <div className="mt-2 flex items-center gap-2 rounded-lg border border-white/6 bg-black/20 px-2.5 py-1.5">
+            <div className="mt-3 flex items-center gap-2.5 rounded-xl border border-white/[0.08] bg-black/30 px-3 py-2">
                 <span className="h-2.5 w-2.5 shrink-0 rounded-full bg-zinc-600 ring-1 ring-white/10" aria-hidden />
-                <span className="text-[10px] leading-snug text-zinc-400">Sem teste — «Testar conexões agora»</span>
+                <span className="text-[10px] leading-snug text-zinc-500">
+                    Ainda sem teste — usa <strong className="font-medium text-zinc-400">Testar conexões agora</strong> acima.
+                </span>
             </div>
         );
     }
@@ -370,11 +372,11 @@ function IntegrationProbeToggle({ data, webhookMode, testRunning }) {
     const latency = typeof data.latency_ms === 'number' ? `${data.latency_ms} ms` : null;
 
     return (
-        <div className="mt-2">
+        <div className="mt-3">
             <button
                 type="button"
                 onClick={() => setOpen((x) => !x)}
-                className="flex w-full items-center justify-between gap-2 rounded-lg border border-white/10 bg-black/30 px-2.5 py-1.5 text-left transition-colors hover:border-white/18 hover:bg-black/40"
+                className="flex w-full items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/35 px-3 py-2 text-left transition-colors hover:border-white/18 hover:bg-black/45"
                 style={{ WebkitAppRegion: 'no-drag' }}
                 aria-expanded={open}
             >
@@ -410,76 +412,180 @@ function IntegrationProbeToggle({ data, webhookMode, testRunning }) {
     );
 }
 
-const flipCardShell =
-    'flex min-h-[100%] flex-col rounded-[1rem] border border-white/15 bg-gradient-to-b from-white/[0.09] to-black/45 p-3 sm:p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06)]';
+/** Cartões do hub de integrações — mais ar, sombra e alinhamento vertical. */
+const hubCardShell =
+    'flex flex-col rounded-[1.05rem] border border-white/[0.11] bg-gradient-to-b from-white/[0.08] via-zinc-950/40 to-black/60 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.06),0_12px_40px_rgba(0,0,0,0.35)] sm:min-h-[14rem]';
 
-/**
- * Cartão do hub com frente (estado / testes) e verso (credenciais), rotação 3D.
- */
-function IntegrationFlipCard({ childrenFront, childrenBack, flipAriaFront, flipAriaBack }) {
-    const [flipped, setFlipped] = useState(false);
-
+/** Linha de meta (host, URL, etc.) dentro dos cartões do hub. */
+function HubMetaBlock({ children }) {
     return (
-        <div className="min-h-[15rem] w-full" style={{ perspective: '1100px' }}>
-            <div
-                className="relative h-full min-h-[15rem] w-full transition-transform duration-500 ease-out motion-reduce:transition-none"
-                style={{
-                    transformStyle: 'preserve-3d',
-                    transform: flipped ? 'rotateY(180deg)' : 'rotateY(0deg)',
-                }}
-            >
-                <div
-                    className={`absolute inset-0 overflow-y-auto overflow-x-hidden ${flipCardShell}`}
-                    style={{ backfaceVisibility: 'hidden', WebkitBackfaceVisibility: 'hidden' }}
-                >
-                    <div className="mb-1.5 flex shrink-0 justify-end">
-                        <button
-                            type="button"
-                            onClick={() => setFlipped(true)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-400 transition-colors hover:border-cyan-500/30 hover:bg-cyan-500/10 hover:text-cyan-100"
-                            style={{ WebkitAppRegion: 'no-drag' }}
-                            aria-label={flipAriaFront}
-                            title={flipAriaFront}
-                        >
-                            <KeyRound className="h-3.5 w-3.5 text-cyan-300/90" aria-hidden />
-                            <ChevronRight className="h-4 w-4" aria-hidden />
-                        </button>
-                    </div>
-                    <div className="min-h-0 flex-1">{childrenFront}</div>
-                </div>
-                <div
-                    className={`absolute inset-0 overflow-y-auto overflow-x-hidden ${flipCardShell}`}
-                    style={{
-                        backfaceVisibility: 'hidden',
-                        WebkitBackfaceVisibility: 'hidden',
-                        transform: 'rotateY(180deg)',
-                    }}
-                >
-                    <div className="mb-2 flex shrink-0 items-center justify-between gap-2 border-b border-white/5 pb-1.5">
-                        <span className="text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-400">Credenciais</span>
-                        <button
-                            type="button"
-                            onClick={() => setFlipped(false)}
-                            className="inline-flex items-center gap-1 rounded-lg border border-white/10 bg-white/5 px-2 py-1 text-[9px] font-semibold uppercase tracking-wider text-zinc-400 transition-colors hover:border-white/20 hover:bg-white/10 hover:text-zinc-100"
-                            style={{ WebkitAppRegion: 'no-drag' }}
-                            aria-label={flipAriaBack}
-                            title={flipAriaBack}
-                        >
-                            <ChevronLeft className="h-4 w-4" aria-hidden />
-                            Estado
-                        </button>
-                    </div>
-                    <div className="min-h-0 flex-1">{childrenBack}</div>
-                </div>
-            </div>
+        <div className="mt-2 space-y-2 rounded-xl border border-white/[0.07] bg-black/35 p-2.5">{children}</div>
+    );
+}
+
+function HubMetaRow({ label, value }) {
+    if (value == null || value === '') return null;
+    return (
+        <div className="flex flex-col gap-0.5 sm:flex-row sm:items-baseline sm:gap-3">
+            <span className="shrink-0 text-[9px] font-bold uppercase tracking-[0.12em] text-zinc-500">{label}</span>
+            <span className="min-w-0 break-all font-mono text-[11px] leading-snug text-zinc-200">{value}</span>
         </div>
     );
 }
 
-/** Cartão estático no estilo da frente do hub (sem flip). */
+/** Faixa alinhada ao probe — Gemini não tem HTTP test no hub. */
+function IntegrationGeminiStatusStrip({ configured }) {
+    return (
+        <div className="mt-3" role="status">
+            <div className="flex w-full items-center justify-between gap-2 rounded-xl border border-white/10 bg-black/35 px-3 py-2">
+                <span className="flex min-w-0 flex-1 items-center gap-2">
+                    <span
+                        className={`h-2.5 w-2.5 shrink-0 rounded-full ${
+                            configured
+                                ? 'bg-sky-400 shadow-[0_0_10px_rgba(56,189,248,0.45)]'
+                                : 'bg-zinc-600 ring-1 ring-white/10'
+                        }`}
+                        aria-hidden
+                    />
+                    <span className="min-w-0 truncate text-[10px] font-bold uppercase tracking-[0.12em] text-zinc-200">
+                        {configured ? 'Chave configurada' : 'Sem chave'}
+                        <span className="ml-1 font-normal normal-case tracking-normal text-zinc-500">
+                            · API não testada neste painel
+                        </span>
+                    </span>
+                </span>
+                <span className="shrink-0 font-mono text-[9px] text-zinc-500">—</span>
+            </div>
+            <p className="mt-1.5 text-[10px] leading-relaxed text-zinc-500">
+                Valida falando com a ATHENAS ou abre <strong className="font-medium text-zinc-400">Editar credenciais</strong>.
+            </p>
+        </div>
+    );
+}
+
+/** Modal centrado para credenciais / ajuda do hub (overlay sobre a janela de configurações). */
+function IntegrationHubModal({ open, onClose, title, subtitle, expandMode, children }) {
+    const isInfoOnly = expandMode === 'info';
+
+    useEffect(() => {
+        if (!open) return;
+        const onKey = (e) => {
+            if (e.key === 'Escape') onClose();
+        };
+        document.addEventListener('keydown', onKey);
+        return () => document.removeEventListener('keydown', onKey);
+    }, [open, onClose]);
+
+    if (!open) return null;
+
+    return createPortal(
+        <div
+            className="fixed inset-0 z-[500] flex items-end justify-center p-3 sm:items-center sm:p-6"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="integration-hub-modal-title"
+        >
+            <button
+                type="button"
+                className="absolute inset-0 bg-black/70 backdrop-blur-[1px]"
+                onClick={onClose}
+                aria-label="Fechar"
+            />
+            <div
+                className="relative z-[1] flex max-h-[min(90dvh,760px)] w-full max-w-lg flex-col overflow-hidden rounded-2xl border border-white/15 bg-zinc-950 shadow-[0_24px_80px_rgba(0,0,0,0.65)] sm:max-w-xl"
+                style={{ WebkitAppRegion: 'no-drag' }}
+            >
+                <div className="flex shrink-0 items-start justify-between gap-3 border-b border-white/10 bg-zinc-950/95 px-4 py-3.5 sm:px-5">
+                    <div className="min-w-0 pr-2">
+                        <h2
+                            id="integration-hub-modal-title"
+                            className="text-sm font-bold uppercase tracking-[0.14em] text-zinc-100"
+                        >
+                            {title}
+                        </h2>
+                        {subtitle ? <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">{subtitle}</p> : null}
+                    </div>
+                    <button
+                        type="button"
+                        onClick={onClose}
+                        className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-white/10 bg-white/5 text-zinc-300 transition-colors hover:bg-white/12 hover:text-white"
+                        aria-label="Fechar"
+                    >
+                        <X size={18} aria-hidden />
+                    </button>
+                </div>
+                <div className="min-h-0 flex-1 overflow-y-auto overflow-x-hidden overscroll-contain px-4 py-4 sm:px-5 sm:py-5">
+                    {isInfoOnly ? (
+                        <p className="mb-4 border-b border-white/5 pb-3 text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+                            Documentação rápida
+                        </p>
+                    ) : (
+                        <p className="mb-4 flex flex-wrap items-center gap-2 border-b border-white/5 pb-3 text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+                            <FileJson className="h-3.5 w-3.5 shrink-0 text-zinc-400" aria-hidden />
+                            <span className="break-all">
+                                Grava em{' '}
+                                <code className="font-mono text-[10px] font-semibold text-zinc-400">
+                                    data/local_credentials.json
+                                </code>
+                            </span>
+                        </p>
+                    )}
+                    <div className="min-h-0">{children}</div>
+                </div>
+            </div>
+        </div>,
+        document.body
+    );
+}
+
+/**
+ * Cartão do hub: resumo (estado / testes) + botão que abre modal com credenciais ou ajuda.
+ */
+function IntegrationModalCard({ summary, credentials, modalTitle, modalSubtitle, expandMode = 'credentials' }) {
+    const [open, setOpen] = useState(false);
+    const isInfoOnly = expandMode === 'info';
+    const btnLabel = isInfoOnly ? 'Como funcionam os webhooks' : 'Editar credenciais';
+
+    return (
+        <>
+            <div className={`${hubCardShell} w-full`}>
+                <div className="flex min-h-0 flex-1 flex-col">{summary}</div>
+                <button
+                    type="button"
+                    onClick={() => setOpen(true)}
+                    className={`mt-4 flex w-full shrink-0 items-center justify-center gap-2 rounded-xl border px-3 py-2.5 text-[10px] font-semibold uppercase tracking-[0.1em] transition-colors motion-reduce:transition-none ${
+                        isInfoOnly
+                            ? 'border-orange-500/20 bg-orange-500/[0.07] text-orange-100/90 hover:border-orange-400/35 hover:bg-orange-500/15'
+                            : 'border-white/10 bg-white/[0.04] text-zinc-300 hover:border-cyan-500/25 hover:bg-cyan-500/10 hover:text-cyan-100'
+                    }`}
+                    style={{ WebkitAppRegion: 'no-drag' }}
+                >
+                    {isInfoOnly ? (
+                        <Webhook className="h-3.5 w-3.5 shrink-0 text-orange-200/90" aria-hidden />
+                    ) : (
+                        <KeyRound className="h-3.5 w-3.5 shrink-0 text-cyan-300/85" aria-hidden />
+                    )}
+                    <span>{btnLabel}</span>
+                    <ChevronRight className="h-4 w-4 shrink-0 opacity-50" aria-hidden />
+                </button>
+            </div>
+            <IntegrationHubModal
+                open={open}
+                onClose={() => setOpen(false)}
+                title={modalTitle}
+                subtitle={modalSubtitle}
+                expandMode={expandMode}
+            >
+                {credentials}
+            </IntegrationHubModal>
+        </>
+    );
+}
+
+/** Cartão da memória semântica — mesmo shell que os cartões do hub (sem flip 3D). */
 function SemanticHubCard({ icon: Icon, iconClass, title, subtitle, badge, children }) {
     return (
-        <div className={`${flipCardShell} min-h-[11.5rem]`}>
+        <div className={`${hubCardShell} min-h-[12rem] w-full sm:min-h-[13.5rem]`}>
             <div className="mb-2 flex items-start justify-between gap-2">
                 <div className="flex min-w-0 items-center gap-2">
                     <span
@@ -500,16 +606,43 @@ function SemanticHubCard({ icon: Icon, iconClass, title, subtitle, badge, childr
 }
 
 /**
- * Memória semântica — mesmo idioma visual do hub de integrações (cartões, ícones, gradiente).
+ * Memória & contexto — entre Cérebro e Integrações (stack de rede).
  */
 function SemanticMemoryHubSection({
     integrations,
     credentialsMeta,
+    testResults,
+    testRunning,
     semanticSearchEnabled,
     semanticEmbedIndex,
     semanticEmbedSenders,
     semanticEmbedMinLength,
     semanticEmbedMaxChars,
+    memoryRemoteSelective,
+    setMemoryRemoteSelective,
+    memoryOllamaGateEnabled,
+    setMemoryOllamaGateEnabled,
+    memoryFullRemote,
+    setMemoryFullRemote,
+    memoryGeminiGateEnabled,
+    setMemoryGeminiGateEnabled,
+    memoryGateModel,
+    setMemoryGateModel,
+    flushMemoryGateModel,
+    memoryOllamaModel,
+    setMemoryOllamaModel,
+    flushMemoryOllamaModel,
+    memoryOllamaUrl,
+    setMemoryOllamaUrl,
+    flushMemoryOllamaUrl,
+    memoryGateRetries,
+    setMemoryGateRetries,
+    flushMemoryGateRetries,
+    memoryGateTimeoutSec,
+    setMemoryGateTimeoutSec,
+    flushMemoryGateTimeoutSec,
+    memorySalienceDebug,
+    setMemorySalienceDebug,
     chatStartupContextLimit,
     setChatStartupContextLimit,
     flushChatStartupContextLimit,
@@ -549,70 +682,76 @@ function SemanticMemoryHubSection({
         commitSemanticEmbedSenders(buildSemanticEmbedSenders({ all: false, user, athenas }));
     };
 
-    return (
-        <section className="mb-8 sm:mb-10">
-            <h3 className={sectionTitleClass}>
-                <Brain className="h-3.5 w-3.5" strokeWidth={2} />
-                Cérebro do chat · memória semântica
-            </h3>
-            <p className="mb-4 max-w-3xl text-[11px] leading-relaxed text-zinc-400 sm:text-xs">
-                Configuração guardada no Supabase em{' '}
-                <code className="rounded bg-black/30 px-1.5 py-0.5 text-zinc-400">athena_settings.values</code>, como a autenticação
-                facial. Embeddings <span className="text-zinc-400">Gemini</span> + vetores no{' '}
-                <span className="text-zinc-400">Postgres (pgvector)</span>.
-            </p>
+    const limitsBadge = `${semanticEmbedMinLength ?? '—'} · ${semanticEmbedMaxChars ?? '—'}`;
+    const liveLimitLabel = String(chatStartupContextLimit ?? '').trim() || '—';
 
-            <div
-                className={`mb-5 rounded-[1.15rem] border border-white/10 bg-gradient-to-br p-4 sm:p-5 shadow-[inset_0_1px_0_rgba(255,255,255,0.05)] sm:p-6 ${
-                    stackReady
-                        ? 'from-fuchsia-500/[0.07] via-violet-950/20 to-cyan-950/25'
-                        : 'from-zinc-800/30 via-black/40 to-zinc-900/40'
-                }`}
-            >
-                <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-                    <div className="flex min-w-0 items-center gap-3">
-                        <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-2xl border border-fuchsia-400/25 bg-fuchsia-500/15 text-fuchsia-200 shadow-[0_0_24px_rgba(217,70,239,0.12)]">
-                            <Brain className="h-5 w-5" strokeWidth={1.75} />
-                        </span>
-                        <div className="min-w-0">
-                            <div className="text-sm font-semibold text-zinc-100">Estado da pipeline</div>
-                            <p className="mt-0.5 text-[10px] leading-relaxed text-zinc-400">
+    return (
+        <section className="mt-4 mb-8 sm:mt-5 sm:mb-10">
+            <div className="overflow-hidden rounded-2xl border border-white/[0.09] bg-gradient-to-br from-violet-950/[0.18] via-fuchsia-950/14 to-zinc-950/90 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
+                <div className="border-b border-white/[0.06] bg-black/25 px-4 py-4 sm:px-6 sm:py-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                                <h3 className={`${sectionTitleClass} mb-0`}>
+                                    <Search className="h-3.5 w-3.5" strokeWidth={2} />
+                                    Memória &amp; contexto
+                                </h3>
                                 {stackReady ? (
-                                    <>
-                                        Supabase e Gemini prontos — podes ligar busca e indexação abaixo.
-                                    </>
+                                    <span className="inline-flex items-center rounded-full border border-violet-500/30 bg-black/40 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-violet-200/80">
+                                        Pipeline OK
+                                    </span>
                                 ) : (
-                                    <>
-                                        Completa o <strong className="font-medium text-zinc-400">hub de integrações</strong> acima
-                                        (URL Supabase + chave Gemini) para ativar o cérebro.
-                                    </>
+                                    <span className="inline-flex items-center rounded-full border border-zinc-600/40 bg-black/40 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-500">
+                                        Aguarda cérebro
+                                    </span>
                                 )}
+                            </div>
+                            <p className="mt-3 max-w-2xl text-xs leading-relaxed text-zinc-400">
+                                Embeddings com <strong className="font-medium text-zinc-300">Gemini</strong>, vetores no{' '}
+                                <strong className="font-medium text-zinc-300">Postgres (pgvector)</strong>, gravação em{' '}
+                                <code className="rounded bg-black/40 px-1.5 py-0.5 text-[11px] text-zinc-400">athena_settings.values</code>.
+                                O ficheiro <code className="text-zinc-500">.env</code> prévalece no arranque do Python quando a variável existir.
                             </p>
                         </div>
+                        <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[10px] text-zinc-400">
+                                <Database
+                                    className={`h-3.5 w-3.5 ${supabaseOk ? 'text-emerald-300/90' : 'text-zinc-500'}`}
+                                    strokeWidth={2}
+                                />
+                                <span className={supabaseOk ? 'text-zinc-200' : ''}>Supabase</span>
+                                <IntegrationStatusPill active={supabaseOk}>{supabaseOk ? 'OK' : 'Off'}</IntegrationStatusPill>
+                            </span>
+                            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[10px] text-zinc-400">
+                                <Bot
+                                    className={`h-3.5 w-3.5 ${geminiOk ? 'text-sky-300/90' : 'text-zinc-500'}`}
+                                    strokeWidth={2}
+                                />
+                                <span className={geminiOk ? 'text-zinc-200' : ''}>Gemini</span>
+                                <IntegrationStatusPill active={geminiOk}>{geminiOk ? 'Chave' : 'Off'}</IntegrationStatusPill>
+                            </span>
+                        </div>
                     </div>
-                    <div className="flex flex-wrap items-center gap-2 sm:justify-end">
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[10px] text-zinc-400">
-                            <Database
-                                className={`h-3.5 w-3.5 ${supabaseOk ? 'text-emerald-300/90' : 'text-zinc-500'}`}
-                                strokeWidth={2}
-                            />
-                            <span className={supabaseOk ? 'text-zinc-200' : ''}>Supabase</span>
-                            <IntegrationStatusPill active={supabaseOk}>{supabaseOk ? 'OK' : 'Off'}</IntegrationStatusPill>
-                        </span>
-                        <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[10px] text-zinc-400">
-                            <Bot
-                                className={`h-3.5 w-3.5 ${geminiOk ? 'text-sky-300/90' : 'text-zinc-500'}`}
-                                strokeWidth={2}
-                            />
-                            <span className={geminiOk ? 'text-zinc-200' : ''}>Gemini</span>
-                            <IntegrationStatusPill active={geminiOk}>{geminiOk ? 'Chave' : 'Off'}</IntegrationStatusPill>
-                        </span>
-                    </div>
+                    {!stackReady ? (
+                        <p className="mt-3 max-w-2xl rounded-lg border border-amber-500/20 bg-amber-950/20 px-3 py-2 text-[10px] leading-relaxed text-amber-100/90">
+                            Completa <strong className="font-medium text-amber-200/90">Cérebro · ATHENAS</strong> acima (URL Supabase + chave
+                            Gemini) para usar busca semântica e indexação.
+                        </p>
+                    ) : null}
                 </div>
-            </div>
 
-            <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 xl:gap-5">
-                <SemanticHubCard
+                <div className="space-y-8 px-4 py-5 sm:px-6 sm:py-6">
+                    <div>
+                        <div className="mb-3 flex flex-wrap items-end justify-between gap-2 border-b border-white/[0.07] pb-2">
+                            <div>
+                                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">1 · Índice &amp; busca</p>
+                                <p className="mt-0.5 text-[11px] text-zinc-400">
+                                    Busca, indexação, remetentes, limites de texto e mensagens no arranque Live.
+                                </p>
+                            </div>
+                        </div>
+                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5 xl:gap-5">
+                            <SemanticHubCard
                     icon={Search}
                     iconClass="border-cyan-500/30 text-cyan-200"
                     title="Busca no histórico"
@@ -713,7 +852,7 @@ function SemanticMemoryHubSection({
                     subtitle="Tamanho do texto"
                     badge={
                         <span className="rounded-full border border-white/10 bg-black/40 px-2 py-0.5 font-mono text-[9px] text-zinc-400">
-                            24 · 8000
+                            {limitsBadge}
                         </span>
                     }
                 >
@@ -749,96 +888,248 @@ function SemanticMemoryHubSection({
                             />
                         </div>
                     </div>
-                </SemanticHubCard>
-            </div>
+                            </SemanticHubCard>
 
-            <div className="mt-4">
-                <SemanticHubCard
-                    icon={History}
-                    iconClass="border-teal-500/30 text-teal-200"
-                    title="Contexto ao ligar (Live)"
-                    subtitle="Histórico injectado na sessão"
-                    badge={
-                        <span className="rounded-full border border-white/10 bg-black/40 px-2 py-0.5 font-mono text-[9px] text-zinc-400">
-                            def: 100
-                        </span>
-                    }
-                >
-                    <p className="mb-2.5 text-[10px] leading-snug text-zinc-400">
-                        Quantas mensagens recentes do projeto vão no texto de arranque (e no reconnect) antes do Gemini Live
-                        começar. Intervalo 10–500. Gravado no Supabase; aplica após reiniciar ou reconectar a sessão de voz.
+                            <SemanticHubCard
+                                icon={History}
+                                iconClass="border-teal-500/30 text-teal-200"
+                                title="Contexto ao ligar (Live)"
+                                subtitle="Arranque da sessão"
+                                badge={
+                                    <span className="rounded-full border border-white/10 bg-black/40 px-2 py-0.5 font-mono text-[9px] text-zinc-400">
+                                        N: {liveLimitLabel}
+                                    </span>
+                                }
+                            >
+                                <p className="mb-2.5 text-[10px] leading-snug text-zinc-400">
+                                    Mensagens recentes injectadas antes do Gemini Live (e no reconnect). Intervalo 10–500. Equivale a{' '}
+                                    <code className="text-zinc-500">ORBITAL_CHAT_STARTUP_CONTEXT_LIMIT</code>.
+                                </p>
+                                <label className="mb-1 block text-[9px] uppercase tracking-wider text-zinc-400">
+                                    Últimas N mensagens
+                                </label>
+                                <input
+                                    type="number"
+                                    min={10}
+                                    max={500}
+                                    value={chatStartupContextLimit}
+                                    onChange={(e) => setChatStartupContextLimit(e.target.value)}
+                                    onBlur={flushChatStartupContextLimit}
+                                    className={fieldClass}
+                                    style={{ WebkitAppRegion: 'no-drag' }}
+                                />
+                            </SemanticHubCard>
+                        </div>
+                    </div>
+
+                    <div>
+                        <div className="mb-3 border-b border-white/[0.07] pb-2">
+                            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
+                                2 · Portão Ollama &amp; memória remota
+                            </p>
+                            <p className="mt-0.5 text-[11px] text-zinc-400">
+                                O que sobe ao Supabase, compat legado, rede local do Ollama e modelo do classificador.
+                            </p>
+                        </div>
+                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-5">
+                            <SemanticHubCard
+                                icon={Sparkles}
+                                iconClass="border-amber-400/35 text-amber-200"
+                                title="Política &amp; filtros"
+                                subtitle="Supabase + gates"
+                                badge={
+                                    <IntegrationStatusPill active={memoryRemoteSelective && geminiOk}>
+                                        {memoryRemoteSelective
+                                            ? memoryOllamaGateEnabled && memoryGeminiGateEnabled
+                                                ? 'IA'
+                                                : 'Bypass'
+                                            : 'Tudo remoto'}
+                                    </IntegrationStatusPill>
+                                }
+                            >
+                                <p className="mb-3 text-[10px] leading-snug text-zinc-400">
+                                    <code className="text-zinc-500">chat_history.jsonl</code> guarda tudo localmente. «Filtrar» + Ollama
+                                    escolhem o que vai ao remoto para embeddings.
+                                </p>
+                                <div className="flex flex-col gap-2.5">
+                                    <div className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5">
+                                        <span className="text-[11px] text-zinc-100">Filtrar envio ao Supabase</span>
+                                        <SettingsSwitch
+                                            checked={memoryRemoteSelective}
+                                            onCheckedChange={setMemoryRemoteSelective}
+                                            ariaLabel="Filtrar mensagens enviadas ao Supabase"
+                                        />
+                                    </div>
+                                    <div
+                                        className={`flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5 ${!memoryRemoteSelective ? 'opacity-45' : ''}`}
+                                    >
+                                        <span className="text-[11px] text-zinc-100">Decidir com Ollama</span>
+                                        <SettingsSwitch
+                                            checked={memoryOllamaGateEnabled && memoryRemoteSelective}
+                                            disabled={!memoryRemoteSelective}
+                                            onCheckedChange={(v) => memoryRemoteSelective && setMemoryOllamaGateEnabled(!!v)}
+                                            ariaLabel="ORBITAL_MEMORY_OLLAMA_GATE"
+                                        />
+                                    </div>
+                                    <div className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5">
+                                        <span className="text-[11px] text-zinc-100">Compat legado Gemini gate</span>
+                                        <SettingsSwitch
+                                            checked={memoryGeminiGateEnabled}
+                                            onCheckedChange={setMemoryGeminiGateEnabled}
+                                            ariaLabel="ORBITAL_MEMORY_GEMINI_GATE"
+                                        />
+                                    </div>
+                                    <div className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5">
+                                        <span className="text-[11px] leading-snug text-zinc-100">
+                                            Enviar tudo ao remoto <span className="text-zinc-500">(sem filtro)</span>
+                                        </span>
+                                        <SettingsSwitch
+                                            checked={memoryFullRemote}
+                                            onCheckedChange={setMemoryFullRemote}
+                                            ariaLabel="ORBITAL_MEMORY_FULL_REMOTE"
+                                        />
+                                    </div>
+                                    <div
+                                        className={`flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5 ${!memoryRemoteSelective || !memoryOllamaGateEnabled ? 'opacity-45' : ''}`}
+                                    >
+                                        <span className="text-[11px] text-zinc-100">Logs de decisão (debug)</span>
+                                        <SettingsSwitch
+                                            checked={memorySalienceDebug}
+                                            onCheckedChange={setMemorySalienceDebug}
+                                            ariaLabel="ORBITAL_MEMORY_SALIENCE_DEBUG"
+                                        />
+                                    </div>
+                                </div>
+                            </SemanticHubCard>
+
+                            <SemanticHubCard
+                                icon={Bot}
+                                iconClass="border-sky-500/30 text-sky-200"
+                                title="Modelo do gate"
+                                subtitle="Ollama classify"
+                                badge={
+                                    <span className="max-w-[6rem] truncate rounded-full border border-white/10 bg-black/40 px-2 py-0.5 font-mono text-[9px] text-zinc-400">
+                                        {(memoryGateModel || memoryOllamaModel || 'def').slice(0, 12)}
+                                    </span>
+                                }
+                            >
+                                <p className="mb-2.5 text-[10px] leading-snug text-zinc-400">
+                                    Vazio usa o pré-definido do código (ex. <code className="text-zinc-500">qwen2.5:7b</code>). Equivale a{' '}
+                                    <code className="text-zinc-500">ORBITAL_MEMORY_GATE_MODEL</code> /{' '}
+                                    <code className="text-zinc-500">ORBITAL_MEMORY_OLLAMA_MODEL</code>.
+                                </p>
+                                <div className="space-y-2.5">
+                                    <div>
+                                        <label className="mb-1 block text-[9px] uppercase tracking-wider text-zinc-400">
+                                            Modelo principal
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={memoryGateModel}
+                                            onChange={(e) => setMemoryGateModel(e.target.value)}
+                                            onBlur={flushMemoryGateModel}
+                                            className={fieldClass}
+                                            placeholder="ex.: qwen2.5:7b"
+                                            style={{ WebkitAppRegion: 'no-drag' }}
+                                        />
+                                    </div>
+                                    <div>
+                                        <label className="mb-1 block text-[9px] uppercase tracking-wider text-zinc-400">
+                                            Alias (compat)
+                                        </label>
+                                        <input
+                                            type="text"
+                                            value={memoryOllamaModel}
+                                            onChange={(e) => setMemoryOllamaModel(e.target.value)}
+                                            onBlur={flushMemoryOllamaModel}
+                                            className={fieldClass}
+                                            placeholder="opcional"
+                                            style={{ WebkitAppRegion: 'no-drag' }}
+                                        />
+                                    </div>
+                                </div>
+                            </SemanticHubCard>
+
+                            <SemanticHubCard
+                                icon={Database}
+                                iconClass="border-emerald-500/28 text-emerald-200"
+                                title="Ligação Ollama"
+                                subtitle="Rede &amp; timeouts"
+                                badge={
+                                    <span className="rounded-full border border-white/10 bg-black/40 px-2 py-0.5 font-mono text-[9px] text-zinc-400">
+                                        {memoryGateRetries}× · {memoryGateTimeoutSec}s
+                                    </span>
+                                }
+                            >
+                                <p className="mb-2.5 text-[10px] leading-snug text-zinc-400">
+                                    Endpoint local e robustez das chamadas ao classificador.{' '}
+                                    <code className="text-zinc-500">ORBITAL_MEMORY_OLLAMA_URL</code>, retries e timeout.
+                                </p>
+                                <div className="space-y-2.5">
+                                    <div>
+                                        <label className="mb-1 block text-[9px] uppercase tracking-wider text-zinc-400">URL base</label>
+                                        <input
+                                            type="text"
+                                            value={memoryOllamaUrl}
+                                            onChange={(e) => setMemoryOllamaUrl(e.target.value)}
+                                            onBlur={flushMemoryOllamaUrl}
+                                            className={fieldClass}
+                                            placeholder="http://127.0.0.1:11434"
+                                            style={{ WebkitAppRegion: 'no-drag' }}
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-2 gap-2">
+                                        <div>
+                                            <label className="mb-1 block text-[9px] uppercase tracking-wider text-zinc-400">Retries 1–5</label>
+                                            <input
+                                                type="number"
+                                                min={1}
+                                                max={5}
+                                                value={memoryGateRetries}
+                                                onChange={(e) => setMemoryGateRetries(e.target.value)}
+                                                onBlur={flushMemoryGateRetries}
+                                                className={fieldClass}
+                                                style={{ WebkitAppRegion: 'no-drag' }}
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="mb-1 block text-[9px] uppercase tracking-wider text-zinc-400">Timeout s</label>
+                                            <input
+                                                type="number"
+                                                min={3}
+                                                max={120}
+                                                step="0.5"
+                                                value={memoryGateTimeoutSec}
+                                                onChange={(e) => setMemoryGateTimeoutSec(e.target.value)}
+                                                onBlur={flushMemoryGateTimeoutSec}
+                                                className={fieldClass}
+                                                style={{ WebkitAppRegion: 'no-drag' }}
+                                            />
+                                        </div>
+                                    </div>
+                                    <IntegrationProbeToggle
+                                        data={testResults?.ollama}
+                                        webhookMode={false}
+                                        testRunning={testRunning}
+                                    />
+                                </div>
+                            </SemanticHubCard>
+                        </div>
+                    </div>
+
+                    <p className="max-w-3xl rounded-xl border border-white/[0.07] bg-black/30 px-3 py-2.5 text-[10px] leading-relaxed text-zinc-500">
+                        <strong className="font-medium text-zinc-400">.env sobrepõe</strong> valores gravados no Supabase quando a variável
+                        existe no arranque do Python (<code className="text-zinc-400">ORBITAL_*</code>).
                     </p>
-                    <label className="mb-1 block text-[9px] uppercase tracking-wider text-zinc-400">
-                        Últimas N mensagens
-                    </label>
-                    <input
-                        type="number"
-                        min={10}
-                        max={500}
-                        value={chatStartupContextLimit}
-                        onChange={(e) => setChatStartupContextLimit(e.target.value)}
-                        onBlur={flushChatStartupContextLimit}
-                        className={fieldClass}
-                        style={{ WebkitAppRegion: 'no-drag' }}
-                    />
-                </SemanticHubCard>
+                </div>
             </div>
-
-            <p className="mt-4 max-w-3xl rounded-xl border border-white/[0.07] bg-black/25 px-3 py-2.5 text-[10px] leading-relaxed text-zinc-500">
-                <strong className="font-medium text-zinc-400">.env sobrepõe a UI:</strong>{' '}
-                <code className="text-zinc-400">ORBITAL_CHAT_SEMANTIC</code>,{' '}
-                <code className="text-zinc-400">ORBITAL_EMBED_INDEX</code>,{' '}
-                <code className="text-zinc-400">ORBITAL_EMBED_SENDERS</code>,{' '}
-                <code className="text-zinc-400">ORBITAL_EMBED_MIN_LENGTH</code>,{' '}
-                <code className="text-zinc-400">ORBITAL_EMBED_MAX_CHARS</code>,{' '}
-                <code className="text-zinc-400">ORBITAL_CHAT_STARTUP_CONTEXT_LIMIT</code>.
-            </p>
         </section>
     );
 }
 
-/**
- * Hub de integrações — dados vindos do backend (`settings.integrations`).
- * Credenciais locais no verso de cada cartão (ficheiro `data/local_credentials.json`).
- */
-function IntegrationsHubSection({
-    integrations,
-    integrationsReady,
-    testRunning,
-    testResults,
-    testError,
-    onRunTests,
-    credentialsMeta,
-    socket,
-}) {
-    const supabase = integrations?.supabase;
-    const comfy = integrations?.comfyui;
-    const n8n = integrations?.n8n;
-
-    const meta = credentialsMeta;
-
-    const [supabaseUrl, setSupabaseUrl] = useState('');
-    const [supabaseKey, setSupabaseKey] = useState('');
-    const [geminiKey, setGeminiKey] = useState('');
-    const [comfyUrl, setComfyUrl] = useState('http://127.0.0.1:2000');
-    const [comfyWorkflow, setComfyWorkflow] = useState('');
+function useServerCredentialsSave(socket) {
     const [credSaving, setCredSaving] = useState(false);
     const [credFeedback, setCredFeedback] = useState(null);
-
-    useEffect(() => {
-        if (!meta || typeof meta !== 'object') return;
-        setSupabaseUrl(meta.supabase_url || '');
-        setComfyUrl(meta.comfyui_base_url || 'http://127.0.0.1:2000');
-        setComfyWorkflow(meta.comfyui_workflow_file || '');
-        const cs = meta.credentials_secrets;
-        if (cs && typeof cs === 'object') {
-            setSupabaseKey(typeof cs.supabase_service_role_key === 'string' ? cs.supabase_service_role_key : '');
-            setGeminiKey(typeof cs.gemini_api_key === 'string' ? cs.gemini_api_key : '');
-        } else {
-            setSupabaseKey('');
-            setGeminiKey('');
-        }
-    }, [meta]);
 
     useEffect(() => {
         const onResult = (payload) => {
@@ -857,458 +1148,762 @@ function IntegrationsHubSection({
         return () => socket.off('server_credentials_save_result', onResult);
     }, [socket]);
 
-    const savePartial = (partial) => {
+    const savePartial = useCallback((partial) => {
         setCredSaving(true);
         setCredFeedback(null);
         socket.emit('save_server_credentials', partial);
-    };
+    }, [socket]);
+
+    return { credSaving, credFeedback, savePartial };
+}
+
+function BrainAndIntegrationsPanels({ socket, children, ...rest }) {
+    const { credSaving, credFeedback, savePartial } = useServerCredentialsSave(socket);
+    return (
+        <>
+            <BrainAthenasSection {...rest} socket={socket} credSaving={credSaving} savePartial={savePartial} />
+            {credFeedback ? (
+                <div
+                    className={`mx-auto mb-6 max-w-[1400px] rounded-xl border px-4 py-2.5 text-xs ${
+                        credFeedback.ok
+                            ? 'border-emerald-500/30 bg-emerald-950/20 text-emerald-100'
+                            : 'border-rose-500/30 bg-rose-950/20 text-rose-100'
+                    }`}
+                    role="status"
+                >
+                    {credFeedback.message}
+                </div>
+            ) : null}
+            {children}
+            <IntegrationsHubSection {...rest} socket={socket} credSaving={credSaving} savePartial={savePartial} />
+        </>
+    );
+}
+
+/**
+ * Núcleo (cérebro): Supabase + Gemini — não são integrações opcionais.
+ */
+function BrainAthenasSection({
+    integrations,
+    integrationsReady,
+    testRunning,
+    testResults,
+    credentialsMeta,
+    socket,
+    credSaving,
+    savePartial,
+}) {
+    const supabase = integrations?.supabase;
+    const meta = credentialsMeta;
+
+    const [supabaseUrl, setSupabaseUrl] = useState('');
+    const [supabaseKey, setSupabaseKey] = useState('');
+    const [supabaseAnonKey, setSupabaseAnonKey] = useState('');
+    const [supabaseConfigEnabled, setSupabaseConfigEnabled] = useState(true);
+    const [athenaModuleKey, setAthenaModuleKey] = useState('athena');
+    const [geminiKey, setGeminiKey] = useState('');
+
+    useEffect(() => {
+        if (!meta || typeof meta !== 'object') return;
+        setSupabaseUrl(meta.supabase_url || '');
+        setSupabaseConfigEnabled(meta.supabase_config_enabled !== false);
+        setAthenaModuleKey(
+            typeof meta.athena_settings_module_key === 'string' && meta.athena_settings_module_key.trim()
+                ? meta.athena_settings_module_key.trim()
+                : 'athena'
+        );
+        const cs = meta.credentials_secrets;
+        if (cs && typeof cs === 'object') {
+            setSupabaseKey(typeof cs.supabase_service_role_key === 'string' ? cs.supabase_service_role_key : '');
+            setSupabaseAnonKey(typeof cs.supabase_anon_key === 'string' ? cs.supabase_anon_key : '');
+            setGeminiKey(typeof cs.gemini_api_key === 'string' ? cs.gemini_api_key : '');
+        } else {
+            setSupabaseKey('');
+            setSupabaseAnonKey('');
+            setGeminiKey('');
+        }
+    }, [meta]);
+
+    const brainReadyCount =
+        integrations && meta ? [!!supabase?.configured, !!meta.gemini_configured].filter(Boolean).length : 0;
 
     return (
-        <section className="mb-8 sm:mb-10">
-            <h3 className={sectionTitleClass}>
-                <Plug2 className="h-3.5 w-3.5" strokeWidth={2} />
-                Hub de integrações
-            </h3>
-            <p className="mb-3 max-w-3xl text-[11px] leading-relaxed text-zinc-400 sm:text-xs">
-                <strong className="text-zinc-400">Seta</strong> no canto: verso = credenciais em{' '}
-                <code className="text-zinc-500">data/local_credentials.json</code>. Teste de ligação: bolinha{' '}
-                <strong className="text-zinc-400">ON/Off</strong> — clica para ver HTTP, ms e erros. Chaves em branco = manter.
-            </p>
-
-            {!integrationsReady ? (
-                <div className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-xs text-zinc-400">
-                    A carregar estado das integrações…
-                </div>
-            ) : !integrations ? (
-                <div className="rounded-xl border border-amber-500/20 bg-amber-950/15 px-4 py-3 text-xs text-amber-100/90">
-                    Este servidor ainda não envia o bloco <code className="text-amber-200/80">integrations</code>. Atualiza o
-                    backend OrbitalSync e reinicia o Python.
-                </div>
-            ) : (
-                <>
-                    <div className="mb-4 flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center sm:gap-3">
-                        <button
-                            type="button"
-                            onClick={onRunTests}
-                            disabled={testRunning}
-                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-500/35 bg-cyan-500/10 px-4 py-2.5 text-xs font-semibold uppercase tracking-[0.12em] text-cyan-100 transition-colors hover:bg-cyan-500/20 disabled:cursor-not-allowed disabled:opacity-45"
-                            style={{ WebkitAppRegion: 'no-drag' }}
-                        >
-                            {testRunning ? (
-                                <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
-                            ) : (
-                                <Activity className="h-4 w-4 shrink-0" aria-hidden />
-                            )}
-                            Testar conexões agora
-                        </button>
+        <section className="mb-6 sm:mb-8">
+            <div className="overflow-hidden rounded-2xl border border-white/[0.09] bg-gradient-to-br from-fuchsia-950/[0.22] via-violet-950/18 to-zinc-950/90 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
+                <div className="border-b border-white/[0.06] bg-black/25 px-4 py-4 sm:px-6 sm:py-5">
+                    <div className="min-w-0 flex-1">
+                        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                            <h3 className={`${sectionTitleClass} mb-0`}>
+                                <Brain className="h-3.5 w-3.5" strokeWidth={2} />
+                                Cérebro · ATHENAS
+                            </h3>
+                            {integrations && meta ? (
+                                <span className="inline-flex items-center rounded-full border border-fuchsia-500/30 bg-black/40 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-fuchsia-200/80">
+                                    {brainReadyCount}/2 núcleo
+                                </span>
+                            ) : null}
+                        </div>
+                        <p className="mt-3 max-w-2xl text-xs leading-relaxed text-zinc-400">
+                            <strong className="font-medium text-zinc-300">Supabase</strong> e{' '}
+                            <strong className="font-medium text-zinc-300">Gemini (ATHENAS)</strong> são a base do sistema — memória remota,
+                            definições, ferramentas e voz/Live. Isto não é uma «integração» ao estilo Comfy ou n8n. Credenciais em{' '}
+                            <code className="rounded bg-black/40 px-1.5 py-0.5 text-[11px] text-zinc-400">
+                                data/local_credentials.json
+                            </code>
+                            . O teste HTTP ao Supabase continua disponível no cartão (e no botão «Testar ligações» na secção de integrações).
+                        </p>
                     </div>
-                    {testError ? (
-                        <div
-                            className="mb-4 rounded-xl border border-rose-500/30 bg-rose-950/20 px-3 py-2 text-xs text-rose-200"
-                            role="alert"
-                        >
-                            {testError}
+                </div>
+
+                <div className="px-4 py-4 sm:px-6 sm:py-5">
+                    {!integrationsReady ? (
+                        <div className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-xs text-zinc-400">
+                            A carregar estado…
                         </div>
-                    ) : null}
-                    {credFeedback ? (
-                        <div
-                            className={`mb-4 rounded-xl border px-3 py-2 text-xs ${
-                                credFeedback.ok
-                                    ? 'border-emerald-500/30 bg-emerald-950/20 text-emerald-100'
-                                    : 'border-rose-500/30 bg-rose-950/20 text-rose-100'
-                            }`}
-                            role="status"
-                        >
-                            {credFeedback.message}
+                    ) : !integrations ? (
+                        <div className="rounded-xl border border-amber-500/20 bg-amber-950/15 px-4 py-3 text-xs text-amber-100/90">
+                            Este servidor ainda não envia o bloco <code className="text-amber-200/80">integrations</code>. Atualiza o backend
+                            OrbitalSync e reinicia o Python.
                         </div>
-                    ) : null}
-                    <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4 xl:gap-5">
-                        <IntegrationFlipCard
-                            flipAriaFront="Mostrar credenciais Supabase"
-                            flipAriaBack="Voltar ao estado Supabase"
-                            childrenFront={
-                                <>
-                                    <div className="mb-2 flex items-start justify-between gap-2">
-                                        <div className="flex min-w-0 items-center gap-2">
-                                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-emerald-500/25 bg-emerald-500/10 text-emerald-300">
-                                                <Database className="h-3.5 w-3.5" strokeWidth={2} />
-                                            </span>
-                                            <div className="min-w-0">
-                                                <div className="text-[13px] font-semibold leading-tight text-zinc-100">Supabase</div>
-                                                <div className="text-[9px] uppercase tracking-wider text-zinc-400">Postgres remoto</div>
+                    ) : (
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5">
+                            <IntegrationModalCard
+                                modalTitle="Supabase"
+                                modalSubtitle="Credenciais em data/local_credentials.json"
+                                summary={
+                                    <>
+                                        <div className="mb-2 flex items-start justify-between gap-2">
+                                            <div className="flex min-w-0 items-center gap-2">
+                                                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-emerald-500/30 bg-emerald-500/10 text-emerald-300">
+                                                    <Database className="h-4 w-4" strokeWidth={2} />
+                                                </span>
+                                                <div className="min-w-0">
+                                                    <div className="text-sm font-semibold leading-tight text-zinc-100">Supabase</div>
+                                                    <div className="text-[10px] uppercase tracking-wider text-zinc-500">Postgres remoto</div>
+                                                </div>
                                             </div>
+                                            <IntegrationStatusPill active={!!supabase?.configured}>
+                                                {supabase?.configured ? 'Ativo' : 'Off'}
+                                            </IntegrationStatusPill>
                                         </div>
-                                        <IntegrationStatusPill active={!!supabase?.configured}>
-                                            {supabase?.configured ? 'Ativo' : 'Off'}
-                                        </IntegrationStatusPill>
-                                    </div>
-                                    <p className="mb-2 line-clamp-3 text-[10px] leading-snug text-zinc-400">
-                                        Config, tools e whitelist de apps quando o backend usa o projeto Supabase.
-                                    </p>
-                                    {supabase?.configured ? (
-                                        <ul className="space-y-1.5 font-mono text-[10px] text-zinc-400">
-                                            {supabase.host ? (
-                                                <li>
-                                                    <span className="text-zinc-500">Host </span>
-                                                    {supabase.host}
-                                                </li>
-                                            ) : null}
-                                            <li>
-                                                <span className="text-zinc-500">Módulo </span>
-                                                {supabase.module_key || 'athena'}
-                                            </li>
-                                        </ul>
-                                    ) : (
-                                        <p className="text-[11px] text-zinc-500">
-                                            Vira o cartão com a <strong className="text-zinc-400">seta</strong> para URL e chave, ou usa{' '}
-                                            <code className="rounded bg-black/40 px-1 text-zinc-400">SUPABASE_*</code> no{' '}
-                                            <code className="text-zinc-400">.env</code>.
+                                        <p className="line-clamp-3 text-[11px] leading-relaxed text-zinc-400">
+                                            Config, tools e whitelist quando o backend usa o projeto Supabase.
                                         </p>
-                                    )}
-                                    <IntegrationProbeToggle data={testResults?.supabase} webhookMode={false} testRunning={testRunning} />
-                                </>
-                            }
-                            childrenBack={
-                                meta ? (
-                                    <div className="flex flex-col gap-2.5">
-                                        <p className="text-[10px] leading-relaxed text-zinc-400">
-                                            Ficheiro:{' '}
-                                            <span className="font-mono text-zinc-400">{shortPath(meta.credentials_file)}</span>
-                                            {meta.credentials_file_exists ? (
-                                                <span className="ml-2 text-emerald-400/80">· existe</span>
-                                            ) : null}
-                                        </p>
-                                        {meta.secrets_visible_in_ui ? (
-                                            <p className="rounded-lg border border-amber-500/25 bg-amber-950/25 px-2.5 py-1.5 text-[10px] leading-relaxed text-amber-100/90">
-                                                <code className="text-amber-200/85">ORBITAL_EXPOSE_SECRETS_IN_SETTINGS_UI</code> ligado — a
-                                                chave é enviada ao abrir. Evita LAN/internet.
-                                            </p>
+                                        {supabase?.configured ? (
+                                            <HubMetaBlock>
+                                                <HubMetaRow label="Host" value={supabase.host} />
+                                                <HubMetaRow label="Módulo" value={supabase.module_key || 'athena'} />
+                                            </HubMetaBlock>
                                         ) : (
-                                            <p className="text-[10px] leading-relaxed text-zinc-500">
-                                                Com chave guardada, vês <strong className="text-zinc-400">pontinhos</strong>; o{' '}
-                                                <strong className="text-zinc-400">olho</strong> pede o valor ao Python (só este PC). Opcional:
-                                                copiar chave ao abrir com{' '}
-                                                <code className="font-mono text-zinc-400">ORBITAL_EXPOSE_SECRETS_IN_SETTINGS_UI=1</code> no{' '}
+                                            <p className="text-[11px] leading-relaxed text-zinc-500">
+                                                Usa <strong className="text-zinc-400">Editar credenciais</strong> para URL e chaves, ou{' '}
+                                                <code className="rounded bg-black/40 px-1 text-zinc-400">SUPABASE_*</code> no{' '}
                                                 <code className="text-zinc-400">.env</code>.
                                             </p>
                                         )}
-                                        <div>
-                                            <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-zinc-400">
-                                                URL do projeto
-                                            </label>
-                                            <input
-                                                type="url"
-                                                value={supabaseUrl}
-                                                onChange={(e) => setSupabaseUrl(e.target.value)}
-                                                placeholder="https://xxxx.supabase.co"
-                                                className={fieldClass}
-                                                autoComplete="off"
-                                            />
-                                        </div>
-                                        <SecretCredentialField
-                                            label="Service role key"
-                                            value={supabaseKey}
-                                            setValue={setSupabaseKey}
-                                            placeholder={
-                                                meta.supabase_configured
-                                                    ? 'Deixar vazio mantém a chave já guardada no PC'
-                                                    : 'Colar service role key'
-                                            }
-                                            configured={!!meta.supabase_configured}
-                                            secretLength={meta.supabase_secret_length}
-                                            field="supabase_service_role_key"
-                                            socket={socket}
-                                            disabled={credSaving || !meta}
+                                        <IntegrationProbeToggle
+                                            data={testResults?.supabase}
+                                            webhookMode={false}
+                                            testRunning={testRunning}
                                         />
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                savePartial({
-                                                    supabase_url: supabaseUrl.trim(),
-                                                    supabase_service_role_key: supabaseKey.trim(),
-                                                })
-                                            }
-                                            disabled={credSaving || !meta}
-                                            className="mt-1 inline-flex items-center justify-center gap-2 rounded-xl border border-cyan-500/35 bg-cyan-500/15 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-cyan-100 transition-colors hover:bg-cyan-500/25 disabled:cursor-not-allowed disabled:opacity-45"
-                                            style={{ WebkitAppRegion: 'no-drag' }}
-                                        >
-                                            {credSaving ? (
-                                                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                                            ) : (
-                                                <Save className="h-3.5 w-3.5" aria-hidden />
-                                            )}
-                                            Guardar Supabase
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <p className="text-xs text-zinc-400">A carregar metadados…</p>
-                                )
-                            }
-                        />
-
-                        <IntegrationFlipCard
-                            flipAriaFront="Mostrar credenciais ComfyUI"
-                            flipAriaBack="Voltar ao estado ComfyUI"
-                            childrenFront={
-                                <>
-                                    <div className="mb-2 flex items-start justify-between gap-2">
-                                        <div className="flex min-w-0 items-center gap-2">
-                                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-violet-500/25 bg-violet-500/10 text-violet-200">
-                                                <Sparkles className="h-3.5 w-3.5" strokeWidth={2} />
-                                            </span>
-                                            <div className="min-w-0">
-                                                <div className="text-[13px] font-semibold leading-tight text-zinc-100">ComfyUI</div>
-                                                <div className="text-[9px] uppercase tracking-wider text-zinc-400">API local</div>
-                                            </div>
-                                        </div>
-                                        <IntegrationStatusPill active={!!comfy?.workflow_ready}>
-                                            {comfy?.workflow_ready ? 'Pronto' : 'Incompleto'}
-                                        </IntegrationStatusPill>
-                                    </div>
-                                    <p className="mb-2 line-clamp-2 text-[10px] leading-snug text-zinc-400">
-                                        Imagens pela ATHENAS — servidor ComfyUI + JSON workflow (API).
-                                    </p>
-                                    <ul className="mb-1 space-y-1 break-all font-mono text-[9px] text-zinc-400">
-                                        <li>
-                                            <span className="text-zinc-500">URL </span>
-                                            {comfy?.base_url || '—'}
-                                        </li>
-                                        <li>
-                                            <span className="text-zinc-500">Workflow </span>
-                                            {shortPath(comfy?.workflow_path)}
-                                        </li>
-                                    </ul>
-                                    <IntegrationProbeToggle data={testResults?.comfyui} webhookMode={false} testRunning={testRunning} />
-                                </>
-                            }
-                            childrenBack={
-                                meta ? (
-                                    <div className="flex flex-col gap-2.5">
-                                        <div>
-                                            <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-zinc-400">
-                                                URL base
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={comfyUrl}
-                                                onChange={(e) => setComfyUrl(e.target.value)}
-                                                placeholder="http://127.0.0.1:2000"
-                                                className={fieldClass}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-zinc-400">
-                                                Workflow API (opcional)
-                                            </label>
-                                            <input
-                                                type="text"
-                                                value={comfyWorkflow}
-                                                onChange={(e) => setComfyWorkflow(e.target.value)}
-                                                placeholder="Opcional — vazio grava data/comfyui/workflow_api.json"
-                                                className={fieldClass}
-                                            />
-                                        </div>
-                                        <button
-                                            type="button"
-                                            onClick={() =>
-                                                savePartial({
-                                                    comfyui_base_url: comfyUrl.trim(),
-                                                    comfyui_workflow_file: comfyWorkflow.trim(),
-                                                })
-                                            }
-                                            disabled={credSaving || !meta}
-                                            className="mt-1 inline-flex items-center justify-center gap-2 rounded-xl border border-violet-500/35 bg-violet-500/15 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-violet-100 transition-colors hover:bg-violet-500/25 disabled:cursor-not-allowed disabled:opacity-45"
-                                            style={{ WebkitAppRegion: 'no-drag' }}
-                                        >
-                                            {credSaving ? (
-                                                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                                            ) : (
-                                                <Save className="h-3.5 w-3.5" aria-hidden />
-                                            )}
-                                            Guardar ComfyUI
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <p className="text-xs text-zinc-400">A carregar metadados…</p>
-                                )
-                            }
-                        />
-
-                        <IntegrationFlipCard
-                            flipAriaFront="Mostrar credenciais Gemini / ATHENAS"
-                            flipAriaBack="Voltar ao estado Gemini"
-                            childrenFront={
-                                <>
-                                    <div className="mb-2 flex items-start justify-between gap-2">
-                                        <div className="flex min-w-0 items-center gap-2">
-                                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-sky-500/25 bg-sky-500/10 text-sky-200">
-                                                <Bot className="h-3.5 w-3.5" strokeWidth={2} />
-                                            </span>
-                                            <div className="min-w-0">
-                                                <div className="text-[13px] font-semibold leading-tight text-zinc-100">Gemini / ATHENAS</div>
-                                                <div className="text-[9px] uppercase tracking-wider text-zinc-400">Live · voz</div>
-                                            </div>
-                                        </div>
-                                        <IntegrationStatusPill active={!!meta?.gemini_configured}>
-                                            {meta?.gemini_configured ? 'Chave OK' : 'Sem chave'}
-                                        </IntegrationStatusPill>
-                                    </div>
-                                    <p className="line-clamp-3 text-[10px] leading-snug text-zinc-400">
-                                        <code className="text-zinc-500">GEMINI_API_KEY</code> — o hub não testa esta API; confirma pelo áudio da
-                                        assistente.
-                                    </p>
-                                </>
-                            }
-                            childrenBack={
-                                meta ? (
-                                    <div className="flex flex-col gap-3">
-                                        {meta.secrets_visible_in_ui ? (
-                                            <p className="rounded-lg border border-amber-500/25 bg-amber-950/25 px-2.5 py-1.5 text-[10px] leading-relaxed text-amber-100/90">
-                                                <code className="text-amber-200/85">ORBITAL_EXPOSE_SECRETS_IN_SETTINGS_UI</code> ligado — chave
-                                                enviada ao abrir.
+                                    </>
+                                }
+                                credentials={
+                                    meta ? (
+                                        <div className="flex flex-col gap-2.5">
+                                            <p className="text-[10px] leading-relaxed text-zinc-400">
+                                                Ficheiro:{' '}
+                                                <span className="font-mono text-zinc-400">{shortPath(meta.credentials_file)}</span>
+                                                {meta.credentials_file_exists ? (
+                                                    <span className="ml-2 text-emerald-400/80">· existe</span>
+                                                ) : null}
                                             </p>
-                                        ) : (
+                                            {meta.secrets_visible_in_ui ? (
+                                                <p className="rounded-lg border border-amber-500/25 bg-amber-950/25 px-2.5 py-1.5 text-[10px] leading-relaxed text-amber-100/90">
+                                                    <code className="text-amber-200/85">ORBITAL_EXPOSE_SECRETS_IN_SETTINGS_UI</code> ligado — a
+                                                    chave é enviada ao abrir. Evita LAN/internet.
+                                                </p>
+                                            ) : (
+                                                <p className="text-[10px] leading-relaxed text-zinc-500">
+                                                    Com chave guardada, vês <strong className="text-zinc-400">pontinhos</strong>; o{' '}
+                                                    <strong className="text-zinc-400">olho</strong> pede o valor ao Python (só este PC). Opcional:
+                                                    copiar chave ao abrir com{' '}
+                                                    <code className="font-mono text-zinc-400">ORBITAL_EXPOSE_SECRETS_IN_SETTINGS_UI=1</code> no{' '}
+                                                    <code className="text-zinc-400">.env</code>.
+                                                </p>
+                                            )}
+                                            <div>
+                                                <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-zinc-400">
+                                                    URL do projeto
+                                                </label>
+                                                <input
+                                                    type="url"
+                                                    value={supabaseUrl}
+                                                    onChange={(e) => setSupabaseUrl(e.target.value)}
+                                                    placeholder="https://xxxx.supabase.co"
+                                                    className={fieldClass}
+                                                    autoComplete="off"
+                                                />
+                                            </div>
+                                            <SecretCredentialField
+                                                label="Service role key"
+                                                value={supabaseKey}
+                                                setValue={setSupabaseKey}
+                                                placeholder={
+                                                    meta.supabase_configured
+                                                        ? 'Deixar vazio mantém a chave já guardada no PC'
+                                                        : 'Colar service role key'
+                                                }
+                                                configured={!!meta.supabase_configured}
+                                                secretLength={
+                                                    typeof meta.supabase_service_role_key_length === 'number'
+                                                        ? meta.supabase_service_role_key_length
+                                                        : meta.supabase_secret_length
+                                                }
+                                                field="supabase_service_role_key"
+                                                socket={socket}
+                                                disabled={credSaving || !meta}
+                                            />
+                                            <SecretCredentialField
+                                                label="Anon key (opcional)"
+                                                value={supabaseAnonKey}
+                                                setValue={setSupabaseAnonKey}
+                                                placeholder={
+                                                    (meta.supabase_anon_key_length || 0) > 0
+                                                        ? 'Deixar vazio mantém a anon key já guardada'
+                                                        : 'Colar anon key se usares só políticas RLS'
+                                                }
+                                                configured={(meta.supabase_anon_key_length || 0) > 0}
+                                                secretLength={meta.supabase_anon_key_length || 0}
+                                                field="supabase_anon_key"
+                                                socket={socket}
+                                                disabled={credSaving || !meta}
+                                            />
+                                            <div className={rowClass}>
+                                                <span className="text-zinc-100">Usar config remota (Supabase)</span>
+                                                <SettingsSwitch
+                                                    checked={supabaseConfigEnabled}
+                                                    onCheckedChange={setSupabaseConfigEnabled}
+                                                    ariaLabel="Ligar ou desligar SUPABASE_CONFIG_ENABLED"
+                                                />
+                                            </div>
                                             <p className="text-[10px] leading-relaxed text-zinc-500">
-                                                Com chave guardada aparecem <strong className="text-zinc-400">pontinhos</strong>; o{' '}
-                                                <strong className="text-zinc-400">olho</strong> carrega do servidor. Opcional:{' '}
-                                                <code className="font-mono text-zinc-400">ORBITAL_EXPOSE_SECRETS_IN_SETTINGS_UI=1</code>.
+                                                Se desligares, o backend ignora URL/chave para carregar{' '}
+                                                <code className="text-zinc-400">athena_settings</code> do projeto (útil offline).
                                             </p>
-                                        )}
-                                        <SecretCredentialField
-                                            label="Google Gemini — API key"
-                                            value={geminiKey}
-                                            setValue={setGeminiKey}
-                                            placeholder={
-                                                meta.gemini_configured
-                                                    ? 'Deixar vazio mantém a chave já guardada no PC'
-                                                    : 'Colar API key do Gemini'
-                                            }
-                                            configured={!!meta.gemini_configured}
-                                            secretLength={meta.gemini_api_key_length}
-                                            field="gemini_api_key"
-                                            socket={socket}
-                                            disabled={credSaving || !meta}
-                                        />
-                                        <button
-                                            type="button"
-                                            onClick={() => savePartial({ gemini_api_key: geminiKey.trim() })}
-                                            disabled={credSaving || !meta}
-                                            className="mt-1 inline-flex items-center justify-center gap-2 rounded-xl border border-sky-500/35 bg-sky-500/15 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-100 transition-colors hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-45"
-                                            style={{ WebkitAppRegion: 'no-drag' }}
-                                        >
-                                            {credSaving ? (
-                                                <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                                            ) : (
-                                                <Save className="h-3.5 w-3.5" aria-hidden />
-                                            )}
-                                            Guardar Gemini
-                                        </button>
-                                    </div>
-                                ) : (
-                                    <p className="text-xs text-zinc-400">A carregar metadados…</p>
-                                )
-                            }
-                        />
-
-                        <IntegrationFlipCard
-                            flipAriaFront="Informação sobre webhooks"
-                            flipAriaBack="Voltar ao estado n8n e webhooks"
-                            childrenFront={
-                                <>
-                                    <div className="mb-2 flex items-start justify-between gap-2">
-                                        <div className="flex min-w-0 items-center gap-2">
-                                            <span className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-orange-500/25 bg-orange-500/10 text-orange-200">
-                                                <Webhook className="h-3.5 w-3.5" strokeWidth={2} />
-                                            </span>
-                                            <div className="min-w-0">
-                                                <div className="text-[13px] font-semibold leading-tight text-zinc-100">n8n &amp; webhooks</div>
-                                                <div className="text-[9px] uppercase tracking-wider text-zinc-400">HTTP</div>
+                                            <div>
+                                                <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-zinc-400">
+                                                    ATHENA_SETTINGS_MODULE_KEY
+                                                </label>
+                                                <input
+                                                    type="text"
+                                                    value={athenaModuleKey}
+                                                    onChange={(e) => setAthenaModuleKey(e.target.value)}
+                                                    placeholder="athena"
+                                                    className={fieldClass}
+                                                    autoComplete="off"
+                                                />
+                                                <p className="mt-1 text-[10px] text-zinc-500">
+                                                    Linha em <code className="text-zinc-400">athena_settings.module_key</code> (predefinição:
+                                                    athena).
+                                                </p>
                                             </div>
+                                            <button
+                                                type="button"
+                                                onClick={() =>
+                                                    savePartial({
+                                                        supabase_url: supabaseUrl.trim(),
+                                                        supabase_service_role_key: supabaseKey.trim(),
+                                                        supabase_anon_key: supabaseAnonKey.trim(),
+                                                        supabase_config_enabled: supabaseConfigEnabled,
+                                                        athena_settings_module_key: athenaModuleKey.trim(),
+                                                    })
+                                                }
+                                                disabled={credSaving || !meta}
+                                                className="mt-1 inline-flex items-center justify-center gap-2 rounded-xl border border-fuchsia-500/35 bg-fuchsia-500/12 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-fuchsia-100 transition-colors hover:bg-fuchsia-500/22 disabled:cursor-not-allowed disabled:opacity-45"
+                                                style={{ WebkitAppRegion: 'no-drag' }}
+                                            >
+                                                {credSaving ? (
+                                                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                                                ) : (
+                                                    <Save className="h-3.5 w-3.5" aria-hidden />
+                                                )}
+                                                Guardar Supabase
+                                            </button>
                                         </div>
-                                        <IntegrationStatusPill active={(n8n?.hooks_count ?? 0) > 0}>
-                                            {(n8n?.hooks_count ?? 0) > 0 ? `${n8n.hooks_count} hooks` : 'Sem hooks'}
-                                        </IntegrationStatusPill>
-                                    </div>
-                                    <p className="mb-2 text-[10px] leading-snug text-zinc-400">
-                                        Tool <strong className="text-zinc-400">trigger_webhook</strong> · origem:{' '}
-                                        {n8n?.webhooks_source === 'supabase' ? 'Supabase' : 'webhooks.json'}.
-                                        {n8n?.webhooks_source === 'supabase' ? (
-                                            <>
-                                                {' '}
-                                                Hooks em <code className="text-zinc-500">config/webhooks.json</code> entram em{' '}
-                                                <em className="not-italic text-zinc-300">merge</em> só para ids que ainda não existem
-                                                no remoto (o app não envia o ficheiro ao Supabase).
-                                            </>
-                                        ) : null}
-                                    </p>
-                                    {(n8n?.hooks_preview?.length ?? 0) > 0 ? (
-                                        <ul className="max-h-[4.5rem] space-y-1 overflow-y-auto pr-1 text-[10px]">
-                                            {n8n.hooks_preview.map((h) => (
-                                                <li
-                                                    key={h.id}
-                                                    className="rounded-md border border-white/5 bg-black/30 px-1.5 py-1 text-zinc-300"
-                                                >
-                                                    <span className="font-mono text-[10px] text-emerald-200/90">{h.id}</span>
-                                                    {h.description ? (
-                                                        <span className="mt-0.5 block text-[10px] leading-snug text-zinc-400">
-                                                            {h.description}
-                                                        </span>
-                                                    ) : null}
-                                                    {h.url ? (
-                                                        <span className="mt-1 block break-all font-mono text-[9px] leading-snug text-orange-200/75">
-                                                            {h.url}
-                                                        </span>
-                                                    ) : (
-                                                        <span className="mt-1 block text-[9px] leading-snug text-zinc-400">
-                                                            <span className="text-amber-200/80">Sem URL no payload.</span>{' '}
-                                                            {n8n?.webhooks_source === 'supabase' ? (
-                                                                <>
-                                                                    Confirma <code className="text-zinc-500">athena_webhooks</code> (coluna{' '}
-                                                                    <code className="text-zinc-500">url</code> ou metadata), RLS e reinicia o Python.
-                                                                </>
-                                                            ) : (
-                                                                <>
-                                                                    Edita <code className="text-zinc-500">config/webhooks.json</code>.
-                                                                </>
-                                                            )}
-                                                        </span>
-                                                    )}
-                                                </li>
-                                            ))}
-                                        </ul>
                                     ) : (
-                                        <p className="text-[11px] text-zinc-500">
-                                            Adiciona em <code className="text-zinc-400">config/webhooks.json</code> ou na tabela{' '}
-                                            <code className="text-zinc-400">athena_webhooks</code>.
+                                        <p className="text-xs text-zinc-400">A carregar metadados…</p>
+                                    )
+                                }
+                            />
+
+                            <IntegrationModalCard
+                                modalTitle="Gemini / ATHENAS"
+                                modalSubtitle="GEMINI_API_KEY (local_credentials.json)"
+                                summary={
+                                    <>
+                                        <div className="mb-2 flex items-start justify-between gap-2">
+                                            <div className="flex min-w-0 items-center gap-2">
+                                                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-sky-500/30 bg-sky-500/10 text-sky-200">
+                                                    <Bot className="h-4 w-4" strokeWidth={2} />
+                                                </span>
+                                                <div className="min-w-0">
+                                                    <div className="text-sm font-semibold leading-tight text-zinc-100">
+                                                        Gemini / ATHENAS
+                                                    </div>
+                                                    <div className="text-[10px] uppercase tracking-wider text-zinc-500">Live · voz</div>
+                                                </div>
+                                            </div>
+                                            <IntegrationStatusPill active={!!meta?.gemini_configured}>
+                                                {meta?.gemini_configured ? 'Chave OK' : 'Sem chave'}
+                                            </IntegrationStatusPill>
+                                        </div>
+                                        <p className="line-clamp-3 text-[11px] leading-relaxed text-zinc-400">
+                                            <code className="rounded bg-black/30 px-1 text-zinc-500">GEMINI_API_KEY</code> — conversa em tempo
+                                            real; este painel não faz pedido HTTP de validação.
                                         </p>
-                                    )}
-                                    <a
-                                        href="https://n8n.io"
-                                        target="_blank"
-                                        rel="noopener noreferrer"
-                                        className="mt-1.5 inline-flex items-center gap-1 text-[9px] font-medium text-orange-300/90 hover:text-orange-200"
-                                    >
-                                        n8n.io
-                                        <ExternalLink className="h-3 w-3" />
-                                    </a>
-                                    <IntegrationProbeToggle data={testResults?.webhooks} webhookMode testRunning={testRunning} />
-                                </>
-                            }
-                            childrenBack={
-                                <div className="flex flex-1 flex-col gap-2 text-[10px] leading-relaxed text-zinc-400">
-                                    <p>
-                                        Sem credenciais aqui. URLs em <code className="text-zinc-400">athena_webhooks</code> ou{' '}
-                                        <code className="text-zinc-400">config/webhooks.json</code>.
-                                    </p>
-                                    <p className="text-zinc-400">
-                                        Na frente: bolinha de teste — expande para ver HTTP por hook.
-                                    </p>
-                                </div>
-                            }
-                        />
+                                        <IntegrationGeminiStatusStrip configured={!!meta?.gemini_configured} />
+                                    </>
+                                }
+                                credentials={
+                                    meta ? (
+                                        <div className="flex flex-col gap-3">
+                                            {meta.secrets_visible_in_ui ? (
+                                                <p className="rounded-lg border border-amber-500/25 bg-amber-950/25 px-2.5 py-1.5 text-[10px] leading-relaxed text-amber-100/90">
+                                                    <code className="text-amber-200/85">ORBITAL_EXPOSE_SECRETS_IN_SETTINGS_UI</code> ligado — chave
+                                                    enviada ao abrir.
+                                                </p>
+                                            ) : (
+                                                <p className="text-[10px] leading-relaxed text-zinc-500">
+                                                    Com chave guardada aparecem <strong className="text-zinc-400">pontinhos</strong>; o{' '}
+                                                    <strong className="text-zinc-400">olho</strong> carrega do servidor. Opcional:{' '}
+                                                    <code className="font-mono text-zinc-400">ORBITAL_EXPOSE_SECRETS_IN_SETTINGS_UI=1</code>.
+                                                </p>
+                                            )}
+                                            <SecretCredentialField
+                                                label="Google Gemini — API key"
+                                                value={geminiKey}
+                                                setValue={setGeminiKey}
+                                                placeholder={
+                                                    meta.gemini_configured
+                                                        ? 'Deixar vazio mantém a chave já guardada no PC'
+                                                        : 'Colar API key do Gemini'
+                                                }
+                                                configured={!!meta.gemini_configured}
+                                                secretLength={meta.gemini_api_key_length}
+                                                field="gemini_api_key"
+                                                socket={socket}
+                                                disabled={credSaving || !meta}
+                                            />
+                                            <button
+                                                type="button"
+                                                onClick={() => savePartial({ gemini_api_key: geminiKey.trim() })}
+                                                disabled={credSaving || !meta}
+                                                className="mt-1 inline-flex items-center justify-center gap-2 rounded-xl border border-sky-500/35 bg-sky-500/15 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-sky-100 transition-colors hover:bg-sky-500/25 disabled:cursor-not-allowed disabled:opacity-45"
+                                                style={{ WebkitAppRegion: 'no-drag' }}
+                                            >
+                                                {credSaving ? (
+                                                    <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                                                ) : (
+                                                    <Save className="h-3.5 w-3.5" aria-hidden />
+                                                )}
+                                                Guardar Gemini
+                                            </button>
+                                        </div>
+                                    ) : (
+                                        <p className="text-xs text-zinc-400">A carregar metadados…</p>
+                                    )
+                                }
+                            />
+                        </div>
+                    )}
+                </div>
+            </div>
+        </section>
+    );
+}
+
+/**
+ * Integrações opcionais: ComfyUI, n8n/webhooks, Finance (Pierre).
+ */
+function IntegrationsHubSection({
+    integrations,
+    integrationsReady,
+    testRunning,
+    testResults,
+    testError,
+    onRunTests,
+    credentialsMeta,
+    socket,
+    credSaving,
+    savePartial,
+}) {
+    const comfy = integrations?.comfyui;
+    const n8n = integrations?.n8n;
+    const meta = credentialsMeta;
+
+    const [comfyUrl, setComfyUrl] = useState('http://127.0.0.1:2000');
+    const [comfyWorkflow, setComfyWorkflow] = useState('');
+    const [pierreKey, setPierreKey] = useState('');
+
+    useEffect(() => {
+        if (!meta || typeof meta !== 'object') return;
+        setComfyUrl(meta.comfyui_base_url || 'http://127.0.0.1:2000');
+        setComfyWorkflow(meta.comfyui_workflow_file || '');
+        const cs = meta.credentials_secrets;
+        if (cs && typeof cs === 'object') {
+            setPierreKey(typeof cs.pierre_api_key === 'string' ? cs.pierre_api_key : '');
+        } else {
+            setPierreKey('');
+        }
+    }, [meta]);
+
+    const integrationsReadyCount =
+        integrations && meta
+            ? [!!comfy?.workflow_ready, (n8n?.hooks_count ?? 0) > 0, !!meta.pierre_configured].filter(Boolean).length
+            : 0;
+
+    return (
+        <section className="mt-4 mb-8 sm:mt-5 sm:mb-10">
+            <div className="overflow-hidden rounded-2xl border border-white/[0.09] bg-gradient-to-br from-teal-950/[0.14] via-zinc-950/50 to-black/80 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
+                <div className="border-b border-white/[0.06] bg-black/25 px-4 py-4 sm:px-6 sm:py-5">
+                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+                        <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                                <h3 className={`${sectionTitleClass} mb-0`}>
+                                    <Plug2 className="h-3.5 w-3.5" strokeWidth={2} />
+                                    Integrações
+                                </h3>
+                                {integrations && meta ? (
+                                    <span className="inline-flex items-center rounded-full border border-teal-500/25 bg-black/40 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-teal-200/85">
+                                        {integrationsReadyCount}/3 ligadas
+                                    </span>
+                                ) : null}
+                            </div>
+                            <p className="mt-3 max-w-2xl text-xs leading-relaxed text-zinc-400">
+                                Serviços à volta do núcleo: imagens (ComfyUI), automações HTTP (n8n / webhooks) e financeiro opcional
+                                (Pierre). <strong className="font-medium text-zinc-300">Testar ligações</strong> cobre Supabase, ComfyUI,
+                                webhooks e Ollama <span className="text-zinc-500">(URL em memória ou</span>{' '}
+                                <code className="text-zinc-500">ORBITAL_MEMORY_OLLAMA_URL</code>
+                                <span className="text-zinc-500">)</span> (o Supabase também está no cérebro).
+                            </p>
+                        </div>
+                        {integrationsReady && integrations ? (
+                            <button
+                                type="button"
+                                onClick={onRunTests}
+                                disabled={testRunning}
+                                className="inline-flex shrink-0 items-center justify-center gap-2 rounded-xl border border-teal-500/40 bg-teal-500/15 px-5 py-3 text-xs font-bold uppercase tracking-[0.14em] text-teal-100 shadow-[0_0_24px_rgba(45,212,191,0.12)] transition-colors hover:bg-teal-500/25 disabled:cursor-not-allowed disabled:opacity-45"
+                                style={{ WebkitAppRegion: 'no-drag' }}
+                            >
+                                {testRunning ? (
+                                    <Loader2 className="h-4 w-4 shrink-0 animate-spin" aria-hidden />
+                                ) : (
+                                    <Activity className="h-4 w-4 shrink-0" aria-hidden />
+                                )}
+                                Testar ligações
+                            </button>
+                        ) : null}
                     </div>
-                </>
-            )}
+                </div>
+
+                <div className="px-4 py-4 sm:px-6 sm:py-5">
+                    {!integrationsReady ? (
+                        <div className="rounded-xl border border-white/10 bg-black/30 px-4 py-3 text-xs text-zinc-400">
+                            A carregar estado das integrações…
+                        </div>
+                    ) : !integrations ? (
+                        <div className="rounded-xl border border-amber-500/20 bg-amber-950/15 px-4 py-3 text-xs text-amber-100/90">
+                            Este servidor ainda não envia o bloco <code className="text-amber-200/80">integrations</code>. Atualiza o
+                            backend OrbitalSync e reinicia o Python.
+                        </div>
+                    ) : (
+                        <>
+                            {testError ? (
+                                <div
+                                    className="mb-4 rounded-xl border border-rose-500/30 bg-rose-950/20 px-3 py-2 text-xs text-rose-200"
+                                    role="alert"
+                                >
+                                    {testError}
+                                </div>
+                            ) : null}
+                            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-3 xl:gap-5 2xl:gap-6">
+                                <IntegrationModalCard
+                                    modalTitle="ComfyUI"
+                                    modalSubtitle="URL base e ficheiro workflow (local_credentials.json)"
+                                    summary={
+                                        <>
+                                            <div className="mb-2 flex items-start justify-between gap-2">
+                                                <div className="flex min-w-0 items-center gap-2">
+                                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-200">
+                                                        <Sparkles className="h-4 w-4" strokeWidth={2} />
+                                                    </span>
+                                                    <div className="min-w-0">
+                                                        <div className="text-sm font-semibold leading-tight text-zinc-100">ComfyUI</div>
+                                                        <div className="text-[10px] uppercase tracking-wider text-zinc-500">API local</div>
+                                                    </div>
+                                                </div>
+                                                <IntegrationStatusPill active={!!comfy?.workflow_ready}>
+                                                    {comfy?.workflow_ready ? 'Pronto' : 'Incompleto'}
+                                                </IntegrationStatusPill>
+                                            </div>
+                                            <p className="line-clamp-2 text-[11px] leading-relaxed text-zinc-400">
+                                                Imagens pela ATHENAS — servidor ComfyUI + JSON workflow (API).
+                                            </p>
+                                            <HubMetaBlock>
+                                                <HubMetaRow label="URL" value={comfy?.base_url || '—'} />
+                                                <HubMetaRow label="Workflow" value={shortPath(comfy?.workflow_path)} />
+                                            </HubMetaBlock>
+                                            <IntegrationProbeToggle
+                                                data={testResults?.comfyui}
+                                                webhookMode={false}
+                                                testRunning={testRunning}
+                                            />
+                                        </>
+                                    }
+                                    credentials={
+                                        meta ? (
+                                            <div className="flex flex-col gap-2.5">
+                                                <div>
+                                                    <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-zinc-400">
+                                                        URL base
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={comfyUrl}
+                                                        onChange={(e) => setComfyUrl(e.target.value)}
+                                                        placeholder="http://127.0.0.1:2000"
+                                                        className={fieldClass}
+                                                    />
+                                                </div>
+                                                <div>
+                                                    <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-zinc-400">
+                                                        Workflow API (opcional)
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        value={comfyWorkflow}
+                                                        onChange={(e) => setComfyWorkflow(e.target.value)}
+                                                        placeholder="Opcional — vazio grava data/comfyui/workflow_api.json"
+                                                        className={fieldClass}
+                                                    />
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() =>
+                                                        savePartial({
+                                                            comfyui_base_url: comfyUrl.trim(),
+                                                            comfyui_workflow_file: comfyWorkflow.trim(),
+                                                        })
+                                                    }
+                                                    disabled={credSaving || !meta}
+                                                    className="mt-1 inline-flex items-center justify-center gap-2 rounded-xl border border-violet-500/35 bg-violet-500/15 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-violet-100 transition-colors hover:bg-violet-500/25 disabled:cursor-not-allowed disabled:opacity-45"
+                                                    style={{ WebkitAppRegion: 'no-drag' }}
+                                                >
+                                                    {credSaving ? (
+                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                                                    ) : (
+                                                        <Save className="h-3.5 w-3.5" aria-hidden />
+                                                    )}
+                                                    Guardar ComfyUI
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-zinc-400">A carregar metadados…</p>
+                                        )
+                                    }
+                                />
+
+                                <IntegrationModalCard
+                                    expandMode="info"
+                                    modalTitle="n8n e webhooks"
+                                    modalSubtitle="Onde ficam as URLs (não vão para local_credentials.json)"
+                                    summary={
+                                        <>
+                                            <div className="mb-2 flex items-start justify-between gap-2">
+                                                <div className="flex min-w-0 items-center gap-2">
+                                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-orange-500/30 bg-orange-500/10 text-orange-200">
+                                                        <Webhook className="h-4 w-4" strokeWidth={2} />
+                                                    </span>
+                                                    <div className="min-w-0">
+                                                        <div className="text-sm font-semibold leading-tight text-zinc-100">
+                                                            n8n &amp; webhooks
+                                                        </div>
+                                                        <div className="text-[10px] uppercase tracking-wider text-zinc-500">HTTP</div>
+                                                    </div>
+                                                </div>
+                                                <IntegrationStatusPill active={(n8n?.hooks_count ?? 0) > 0}>
+                                                    {(n8n?.hooks_count ?? 0) > 0 ? `${n8n.hooks_count} hooks` : 'Sem hooks'}
+                                                </IntegrationStatusPill>
+                                            </div>
+                                            <p className="mb-2 text-[11px] leading-relaxed text-zinc-400">
+                                                Tool <strong className="text-zinc-400">trigger_webhook</strong> · origem:{' '}
+                                                {n8n?.webhooks_source === 'supabase' ? 'Supabase' : 'webhooks.json'}.
+                                                {n8n?.webhooks_source === 'supabase' ? (
+                                                    <>
+                                                        {' '}
+                                                        Hooks em <code className="text-zinc-500">config/webhooks.json</code> entram em{' '}
+                                                        <em className="not-italic text-zinc-300">merge</em> só para ids que ainda não existem
+                                                        no remoto (o app não envia o ficheiro ao Supabase).
+                                                    </>
+                                                ) : null}
+                                            </p>
+                                            {(n8n?.hooks_preview?.length ?? 0) > 0 ? (
+                                                <ul className="max-h-[5.5rem] space-y-1.5 overflow-y-auto pr-1 text-[11px] leading-snug">
+                                                    {n8n.hooks_preview.map((h) => (
+                                                        <li
+                                                            key={h.id}
+                                                            className="rounded-md border border-white/5 bg-black/30 px-1.5 py-1 text-zinc-300"
+                                                        >
+                                                            <span className="font-mono text-[10px] text-emerald-200/90">{h.id}</span>
+                                                            {h.description ? (
+                                                                <span className="mt-0.5 block text-[10px] leading-snug text-zinc-400">
+                                                                    {h.description}
+                                                                </span>
+                                                            ) : null}
+                                                            {h.url ? (
+                                                                <span className="mt-1 block break-all font-mono text-[9px] leading-snug text-orange-200/75">
+                                                                    {h.url}
+                                                                </span>
+                                                            ) : (
+                                                                <span className="mt-1 block text-[9px] leading-snug text-zinc-400">
+                                                                    <span className="text-amber-200/80">Sem URL no payload.</span>{' '}
+                                                                    {n8n?.webhooks_source === 'supabase' ? (
+                                                                        <>
+                                                                            Confirma <code className="text-zinc-500">athena_webhooks</code>{' '}
+                                                                            (coluna <code className="text-zinc-500">url</code> ou metadata), RLS e
+                                                                            reinicia o Python.
+                                                                        </>
+                                                                    ) : (
+                                                                        <>
+                                                                            Edita <code className="text-zinc-500">config/webhooks.json</code>.
+                                                                        </>
+                                                                    )}
+                                                                </span>
+                                                            )}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            ) : (
+                                                <p className="text-[11px] text-zinc-500">
+                                                    Adiciona em <code className="text-zinc-400">config/webhooks.json</code> ou na tabela{' '}
+                                                    <code className="text-zinc-400">athena_webhooks</code>.
+                                                </p>
+                                            )}
+                                            <a
+                                                href="https://n8n.io"
+                                                target="_blank"
+                                                rel="noopener noreferrer"
+                                                className="mt-1.5 inline-flex items-center gap-1 text-[9px] font-medium text-orange-300/90 hover:text-orange-200"
+                                            >
+                                                n8n.io
+                                                <ExternalLink className="h-3 w-3" />
+                                            </a>
+                                            <IntegrationProbeToggle
+                                                data={testResults?.webhooks}
+                                                webhookMode
+                                                testRunning={testRunning}
+                                            />
+                                        </>
+                                    }
+                                    credentials={
+                                        <div className="flex flex-1 flex-col gap-2 text-[10px] leading-relaxed text-zinc-400">
+                                            <p>
+                                                Estes URLs não vão para <code className="text-zinc-400">local_credentials.json</code>. Configura em{' '}
+                                                <code className="text-zinc-400">athena_webhooks</code> (Supabase) ou em{' '}
+                                                <code className="text-zinc-400">config/webhooks.json</code>.
+                                            </p>
+                                            <p className="text-zinc-400">Acima: bolinha de teste — expande para ver HTTP por hook.</p>
+                                        </div>
+                                    }
+                                />
+
+                                <IntegrationModalCard
+                                    modalTitle="Finance (Pierre)"
+                                    modalSubtitle="PIERRE_API_KEY (local_credentials.json)"
+                                    summary={
+                                        <>
+                                            <div className="mb-2 flex items-start justify-between gap-2">
+                                                <div className="flex min-w-0 items-center gap-2">
+                                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-lime-500/30 bg-lime-500/10 text-lime-200">
+                                                        <Wallet className="h-4 w-4" strokeWidth={2} />
+                                                    </span>
+                                                    <div className="min-w-0">
+                                                        <div className="text-sm font-semibold leading-tight text-zinc-100">
+                                                            Finance · Pierre
+                                                        </div>
+                                                        <div className="text-[10px] uppercase tracking-wider text-zinc-500">Opcional</div>
+                                                    </div>
+                                                </div>
+                                                <IntegrationStatusPill active={!!meta?.pierre_configured}>
+                                                    {meta?.pierre_configured ? 'Token OK' : 'Sem token'}
+                                                </IntegrationStatusPill>
+                                            </div>
+                                            <p className="line-clamp-3 text-[11px] leading-relaxed text-zinc-400">
+                                                Integração financeira opcional. URL e timeouts definem-se no{' '}
+                                                <code className="rounded bg-black/30 px-1 text-zinc-500">.env</code> (
+                                                <code className="text-zinc-500">PIERRE_BASE_URL</code>, etc.).
+                                            </p>
+                                        </>
+                                    }
+                                    credentials={
+                                        meta ? (
+                                            <div className="flex flex-col gap-2.5">
+                                                {meta.secrets_visible_in_ui ? (
+                                                    <p className="rounded-lg border border-amber-500/25 bg-amber-950/25 px-2.5 py-1.5 text-[10px] leading-relaxed text-amber-100/90">
+                                                        <code className="text-amber-200/85">ORBITAL_EXPOSE_SECRETS_IN_SETTINGS_UI</code> ligado —
+                                                        token enviado ao abrir.
+                                                    </p>
+                                                ) : (
+                                                    <p className="text-[10px] leading-relaxed text-zinc-500">
+                                                        Mesmo fluxo que as outras chaves: pontinhos + olho para revelar localmente.
+                                                    </p>
+                                                )}
+                                                <SecretCredentialField
+                                                    label="Pierre — API key"
+                                                    value={pierreKey}
+                                                    setValue={setPierreKey}
+                                                    placeholder={
+                                                        meta.pierre_configured
+                                                            ? 'Deixar vazio mantém o token já guardado no PC'
+                                                            : 'Colar API key Pierre'
+                                                    }
+                                                    configured={!!meta.pierre_configured}
+                                                    secretLength={meta.pierre_api_key_length ?? 0}
+                                                    field="pierre_api_key"
+                                                    socket={socket}
+                                                    disabled={credSaving || !meta}
+                                                />
+                                                <p className="text-[10px] leading-relaxed text-zinc-500">
+                                                    <code className="text-zinc-400">PIERRE_BASE_URL</code> e restantes{' '}
+                                                    <code className="text-zinc-400">PIERRE_*</code> no ficheiro{' '}
+                                                    <code className="text-zinc-400">.env</code> (secção Finance no mapa abaixo).
+                                                </p>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => savePartial({ pierre_api_key: pierreKey.trim() })}
+                                                    disabled={credSaving || !meta}
+                                                    className="mt-1 inline-flex items-center justify-center gap-2 rounded-xl border border-lime-500/35 bg-lime-500/12 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-lime-100 transition-colors hover:bg-lime-500/22 disabled:cursor-not-allowed disabled:opacity-45"
+                                                    style={{ WebkitAppRegion: 'no-drag' }}
+                                                >
+                                                    {credSaving ? (
+                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
+                                                    ) : (
+                                                        <Save className="h-3.5 w-3.5" aria-hidden />
+                                                    )}
+                                                    Guardar Pierre
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <p className="text-xs text-zinc-400">A carregar metadados…</p>
+                                        )
+                                    }
+                                />
+                            </div>
+                        </>
+                    )}
+                </div>
+            </div>
         </section>
     );
 }
@@ -1453,6 +2048,147 @@ function DotEnvFileSection({ socket }) {
     );
 }
 
+function EnvReferenceSection() {
+    const [expanded, setExpanded] = useState(false);
+    const groups = [
+        {
+            title: 'LLM principal',
+            icon: Bot,
+            keys: [
+                ['GEMINI_API_KEY', 'Chave da ATHENAS (voz/chat Live).'],
+                ['ORBITAL_EXPOSE_SECRETS_IN_SETTINGS_UI', 'Mostra segredos na UI local (somente dev).'],
+            ],
+        },
+        {
+            title: 'Supabase',
+            icon: Database,
+            keys: [
+                ['SUPABASE_URL', 'URL do projeto Supabase.'],
+                ['SUPABASE_SERVICE_ROLE_KEY', 'Chave de servidor (recomendado no backend).'],
+                ['SUPABASE_ANON_KEY', 'Alternativa com políticas RLS adequadas.'],
+                ['SUPABASE_CONFIG_ENABLED', 'Liga/desliga uso de config remota.'],
+                ['ATHENA_SETTINGS_MODULE_KEY', 'module_key em athena_settings (default: athena).'],
+            ],
+        },
+        {
+            title: 'Memória remota (Ollama gate)',
+            icon: Brain,
+            keys: [
+                ['ORBITAL_MEMORY_OLLAMA_GATE', 'Liga/desliga classificador seletivo de memória.'],
+                ['ORBITAL_MEMORY_GEMINI_GATE', 'Compat legado (se off, também desliga o gate).'],
+                ['ORBITAL_MEMORY_FULL_REMOTE', 'Se on, envia tudo para remoto (sem filtro).'],
+                ['ORBITAL_MEMORY_GATE_MODEL', 'Modelo Ollama usado no gate (ex.: qwen2.5:7b).'],
+                ['ORBITAL_MEMORY_OLLAMA_MODEL', 'Alias opcional de modelo (compat).'],
+                ['ORBITAL_MEMORY_OLLAMA_URL', 'Endpoint local do Ollama.'],
+                ['ORBITAL_MEMORY_GATE_RETRIES', 'Tentativas em falha de chamada local.'],
+                ['ORBITAL_MEMORY_GATE_TIMEOUT_SEC', 'Timeout por requisição do gate.'],
+                ['ORBITAL_MEMORY_SALIENCE_DEBUG', 'Logs detalhados de decisão de memória.'],
+            ],
+        },
+        {
+            title: 'Embeddings e busca semântica',
+            icon: Search,
+            keys: [
+                ['ORBITAL_CHAT_SEMANTIC', 'Liga/desliga busca semântica no histórico.'],
+                ['ORBITAL_EMBED_INDEX', 'Liga indexação automática por embeddings.'],
+                ['ORBITAL_EMBED_SENDERS', 'Quem indexar: * ou User, ATHENAS.'],
+                ['ORBITAL_EMBED_MIN_LENGTH', 'Mínimo de caracteres para indexar.'],
+                ['ORBITAL_EMBED_MAX_CHARS', 'Máximo de caracteres por embedding.'],
+                ['ORBITAL_CHAT_STARTUP_CONTEXT_LIMIT', 'Mensagens usadas no startup/reconnect.'],
+            ],
+        },
+        {
+            title: 'Integrações',
+            icon: Plug2,
+            keys: [
+                ['COMFYUI_BASE_URL', 'Base URL do ComfyUI local.'],
+                ['COMFYUI_WORKFLOW_FILE', 'Workflow customizado (opcional).'],
+                ['ATHENA_GOOGLE_CALENDAR_WEBHOOK_URL', 'Webhook padrão de calendário (opcional).'],
+                ['ORBITAL_DISABLE_DEFAULT_CALENDAR_WEBHOOK', 'Desliga injeção do webhook padrão.'],
+                ['ORBITAL_INTEGRATION_TEST_LOG', 'Logs extras no teste de integrações.'],
+                ['ORBITAL_SKIP_WEBHOOK_POST_PROBE', 'Não faz POST de probe em /webhook/.'],
+            ],
+        },
+        {
+            title: 'Finance / extras',
+            icon: FileText,
+            keys: [
+                ['PIERRE_API_KEY', 'Token da integração Pierre (opcional).'],
+                ['PIERRE_BASE_URL', 'URL base da API Pierre.'],
+                ['PIERRE_TIMEOUT_SECONDS', 'Timeout das chamadas padrão.'],
+                ['PIERRE_MANUAL_UPDATE_TIMEOUT_SECONDS', 'Timeout de atualizações manuais.'],
+                ['PIERRE_POST_SYNC_WAIT_SECONDS', 'Espera base após sync.'],
+                ['PIERRE_POST_SYNC_EXTRA_WAIT_INPROGRESS', 'Espera extra se houver itens em progresso.'],
+                ['PIERRE_POST_SYNC_WAIT_MAX', 'Limite máximo de espera pós-sync.'],
+                ['PIERRE_FOLLOW_UP_SNAPSHOT_SECONDS', 'Delay para snapshot de confirmação.'],
+                ['ORBITAL_SKIP_DOCKER_START', 'Não executa docker start no arranque do Electron.'],
+                ['ORBITAL_DOCKER_CONTAINERS', 'Nomes Docker (vírgula), ex.: n8n. Default: n8n.'],
+                ['ORBITAL_START_DOCKER_DESKTOP', 'Windows: 0 = não abrir Docker Desktop se o daemon estiver parado.'],
+                ['ORBITAL_DOCKER_DESKTOP_EXE', 'Caminho do Docker Desktop.exe (opcional).'],
+                ['ORBITAL_DOCKER_WAIT_MS', 'Tempo máximo a esperar pelo daemon após abrir o Desktop (ms).'],
+                ['ORBITAL_DOCKER_CLI', 'Caminho completo do docker.exe se o Electron não tiver docker no PATH.'],
+                ['ORBITAL_DOCKER_STOP_ON_QUIT', 'Se 1, executa docker stop nos containers ao sair do app.'],
+                ['ORBITAL_SKIP_CLOUDFLARED', 'Desliga bootstrap de cloudflared.'],
+                ['CLOUDFLARED_TUNNEL', 'Nome do túnel cloudflared.'],
+                ['CLOUDFLARED_EXE', 'Caminho do executável cloudflared.'],
+            ],
+        },
+    ];
+
+    return (
+        <section className="mb-8 sm:mb-10">
+            <div className="mb-3 flex items-center justify-between gap-3">
+                <h3 className={`${sectionTitleClass} mb-0`}>
+                    <Wrench className="h-3.5 w-3.5" strokeWidth={2} />
+                    Mapa de configurações (.env)
+                </h3>
+                <button
+                    type="button"
+                    onClick={() => setExpanded((v) => !v)}
+                    className="inline-flex items-center gap-1.5 rounded-xl border border-white/15 bg-white/5 px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.12em] text-zinc-200 transition-colors hover:bg-white/10"
+                    style={{ WebkitAppRegion: 'no-drag' }}
+                >
+                    {expanded ? 'Ocultar' : 'Exibir'}
+                    {expanded ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronRight className="h-3.5 w-3.5" />}
+                </button>
+            </div>
+            <p className="mb-4 max-w-3xl text-xs leading-relaxed text-zinc-400 sm:text-sm">
+                Referência rápida das variáveis suportadas pelo backend.
+            </p>
+            {expanded ? (
+                <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+                    {groups.map((group) => {
+                        const Icon = group.icon;
+                        return (
+                            <div
+                                key={group.title}
+                                className="rounded-[1.15rem] border border-white/10 bg-gradient-to-b from-white/[0.04] to-black/40 p-4 shadow-[inset_0_1px_0_rgba(255,255,255,0.04)]"
+                            >
+                                <div className="mb-3 flex items-center gap-2">
+                                    <span className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/10 bg-black/30 text-zinc-300">
+                                        <Icon className="h-3.5 w-3.5" strokeWidth={2} />
+                                    </span>
+                                    <div className="text-[11px] font-semibold uppercase tracking-[0.13em] text-zinc-200">
+                                        {group.title}
+                                    </div>
+                                </div>
+                                <div className="space-y-2">
+                                    {group.keys.map(([keyName, help]) => (
+                                        <div key={keyName} className="rounded-lg border border-white/[0.06] bg-black/20 px-2.5 py-2">
+                                            <code className="text-[10px] text-cyan-200">{keyName}</code>
+                                            <p className="mt-1 text-[10px] leading-relaxed text-zinc-500">{help}</p>
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            ) : null}
+        </section>
+    );
+}
+
 /**
  * Checkbox nativo com área de clique total — em Electron, <button> + filhos absolutos
  * às vezes não recebem o clique corretamente com -webkit-app-region.
@@ -1524,6 +2260,16 @@ const SettingsWindow = ({
     const [semanticEmbedMinLength, setSemanticEmbedMinLength] = useState('24');
     const [semanticEmbedMaxChars, setSemanticEmbedMaxChars] = useState('8000');
     const [chatStartupContextLimit, setChatStartupContextLimit] = useState('100');
+    const [memoryRemoteSelective, setMemoryRemoteSelectiveState] = useState(true);
+    const [memoryOllamaGateEnabled, setMemoryOllamaGateState] = useState(true);
+    const [memoryFullRemote, setMemoryFullRemoteState] = useState(false);
+    const [memoryGeminiGateEnabled, setMemoryGeminiGateEnabledState] = useState(true);
+    const [memoryGateModel, setMemoryGateModel] = useState('');
+    const [memoryOllamaModel, setMemoryOllamaModel] = useState('');
+    const [memoryOllamaUrl, setMemoryOllamaUrl] = useState('');
+    const [memoryGateRetries, setMemoryGateRetries] = useState('3');
+    const [memoryGateTimeoutSec, setMemoryGateTimeoutSec] = useState('20');
+    const [memorySalienceDebug, setMemorySalienceDebugState] = useState(false);
     const [launchAppCatalog, setLaunchAppCatalog] = useState([]);
     const [launchAppsConfigPath, setLaunchAppsConfigPath] = useState('');
     const [pathCopied, setPathCopied] = useState(false);
@@ -1671,6 +2417,44 @@ const SettingsWindow = ({
                 const n = parseInt(String(settings.semantic_embed_max_chars), 10);
                 if (!Number.isNaN(n)) setSemanticEmbedMaxChars(String(n));
             }
+            if (typeof settings.memory_remote_selective !== 'undefined') {
+                setMemoryRemoteSelectiveState(!!settings.memory_remote_selective);
+            }
+            if (typeof settings.memory_ollama_gate_enabled !== 'undefined') {
+                setMemoryOllamaGateState(!!settings.memory_ollama_gate_enabled);
+            } else if (typeof settings.memory_gemini_gate_enabled !== 'undefined') {
+                setMemoryOllamaGateState(!!settings.memory_gemini_gate_enabled);
+            }
+            if (typeof settings.memory_full_remote !== 'undefined') {
+                setMemoryFullRemoteState(!!settings.memory_full_remote);
+            }
+            if (typeof settings.memory_gemini_gate_enabled !== 'undefined') {
+                setMemoryGeminiGateEnabledState(!!settings.memory_gemini_gate_enabled);
+            }
+            if (typeof settings.memory_gate_model === 'string') {
+                setMemoryGateModel(settings.memory_gate_model);
+            }
+            if (typeof settings.memory_ollama_model === 'string') {
+                setMemoryOllamaModel(settings.memory_ollama_model);
+            }
+            if (typeof settings.memory_ollama_url === 'string') {
+                setMemoryOllamaUrl(settings.memory_ollama_url);
+            }
+            if (typeof settings.memory_gate_retries === 'number') {
+                setMemoryGateRetries(String(settings.memory_gate_retries));
+            } else if (settings.memory_gate_retries != null) {
+                const n = parseInt(String(settings.memory_gate_retries), 10);
+                if (!Number.isNaN(n)) setMemoryGateRetries(String(n));
+            }
+            if (typeof settings.memory_gate_timeout_sec === 'number') {
+                setMemoryGateTimeoutSec(String(settings.memory_gate_timeout_sec));
+            } else if (settings.memory_gate_timeout_sec != null) {
+                const n = parseFloat(String(settings.memory_gate_timeout_sec));
+                if (!Number.isNaN(n)) setMemoryGateTimeoutSec(String(n));
+            }
+            if (typeof settings.memory_salience_debug !== 'undefined') {
+                setMemorySalienceDebugState(!!settings.memory_salience_debug);
+            }
             if (Array.isArray(settings.launch_app_catalog)) {
                 setLaunchAppCatalog(settings.launch_app_catalog);
             }
@@ -1692,6 +2476,10 @@ const SettingsWindow = ({
                     supabase_url: '',
                     supabase_configured: false,
                     supabase_host: '',
+                    supabase_config_enabled: true,
+                    athena_settings_module_key: 'athena',
+                    supabase_anon_key_length: 0,
+                    supabase_service_role_key_length: 0,
                     gemini_configured: false,
                     comfyui_base_url: 'http://127.0.0.1:2000',
                     comfyui_workflow_file: '',
@@ -1765,6 +2553,65 @@ const SettingsWindow = ({
         socket.emit('update_settings', { chat_startup_context_limit: v });
     }, [chatStartupContextLimit, socket]);
 
+    const setMemoryRemoteSelective = useCallback(
+        (v) => {
+            const next = !!v;
+            setMemoryRemoteSelectiveState(next);
+            socket.emit('update_settings', { memory_remote_selective: next });
+        },
+        [socket]
+    );
+
+    const setMemoryOllamaGateEnabled = useCallback((v) => {
+        const next = !!v;
+        setMemoryOllamaGateState(next);
+        socket.emit('update_settings', { memory_ollama_gate_enabled: next });
+    }, [socket]);
+
+    const setMemoryFullRemote = useCallback((v) => {
+        const next = !!v;
+        setMemoryFullRemoteState(next);
+        socket.emit('update_settings', { memory_full_remote: next });
+    }, [socket]);
+
+    const setMemoryGeminiGateEnabled = useCallback((v) => {
+        const next = !!v;
+        setMemoryGeminiGateEnabledState(next);
+        socket.emit('update_settings', { memory_gemini_gate_enabled: next });
+    }, [socket]);
+
+    const flushMemoryGateModel = useCallback(() => {
+        socket.emit('update_settings', { memory_gate_model: memoryGateModel.trim() });
+    }, [memoryGateModel, socket]);
+
+    const flushMemoryOllamaModel = useCallback(() => {
+        socket.emit('update_settings', { memory_ollama_model: memoryOllamaModel.trim() });
+    }, [memoryOllamaModel, socket]);
+
+    const flushMemoryOllamaUrl = useCallback(() => {
+        socket.emit('update_settings', { memory_ollama_url: memoryOllamaUrl.trim() });
+    }, [memoryOllamaUrl, socket]);
+
+    const flushMemoryGateRetries = useCallback(() => {
+        const n = parseInt(String(memoryGateRetries).trim(), 10);
+        const v = Number.isNaN(n) ? 3 : Math.max(1, Math.min(5, n));
+        setMemoryGateRetries(String(v));
+        socket.emit('update_settings', { memory_gate_retries: v });
+    }, [memoryGateRetries, socket]);
+
+    const flushMemoryGateTimeoutSec = useCallback(() => {
+        const n = parseFloat(String(memoryGateTimeoutSec).trim());
+        const v = Number.isNaN(n) ? 20 : Math.max(3, Math.min(120, n));
+        setMemoryGateTimeoutSec(String(v));
+        socket.emit('update_settings', { memory_gate_timeout_sec: v });
+    }, [memoryGateTimeoutSec, socket]);
+
+    const setMemorySalienceDebug = useCallback((v) => {
+        const next = !!v;
+        setMemorySalienceDebugState(next);
+        socket.emit('update_settings', { memory_salience_debug: next });
+    }, [socket]);
+
     const copyConfigPath = async () => {
         if (!launchAppsConfigPath) return;
         try {
@@ -1812,7 +2659,7 @@ const SettingsWindow = ({
                         Configurações
                     </h2>
                     <p className="mt-1 max-w-2xl text-xs text-zinc-400">
-                        Áudio, câmera, hub de integrações (Supabase, ComfyUI, n8n), apps e ferramentas da ATHENAS.
+                        Áudio, câmera, cérebro (Supabase + Gemini), memória &amp; contexto, integrações (ComfyUI, n8n, Pierre), apps e ATHENAS.
                     </p>
                     <p className="mt-1 text-[10px] text-zinc-400">Esc para fechar</p>
                 </div>
@@ -1829,7 +2676,7 @@ const SettingsWindow = ({
             <div className="relative z-10 flex min-h-0 flex-1 flex-col overflow-hidden">
                 <div className="min-h-0 flex-1 transform-gpu overflow-y-auto overflow-x-hidden overscroll-y-contain px-6 py-6 sm:px-8 lg:px-10 [contain:layout]">
                     <div className="mx-auto flex min-h-0 w-full max-w-[1400px] flex-col xl:min-h-[calc(100dvh-9rem)]">
-                        <IntegrationsHubSection
+                        <BrainAndIntegrationsPanels
                             integrations={integrations}
                             integrationsReady={integrationsReady}
                             testRunning={integrationTestRunning}
@@ -1838,26 +2685,55 @@ const SettingsWindow = ({
                             onRunTests={runIntegrationTests}
                             credentialsMeta={credentialsMeta}
                             socket={socket}
-                        />
-                        <SemanticMemoryHubSection
-                            integrations={integrations}
-                            credentialsMeta={credentialsMeta}
-                            semanticSearchEnabled={semanticSearchEnabled}
-                            semanticEmbedIndex={semanticEmbedIndex}
-                            semanticEmbedSenders={semanticEmbedSenders}
-                            semanticEmbedMinLength={semanticEmbedMinLength}
-                            semanticEmbedMaxChars={semanticEmbedMaxChars}
-                            chatStartupContextLimit={chatStartupContextLimit}
-                            setChatStartupContextLimit={setChatStartupContextLimit}
-                            flushChatStartupContextLimit={flushChatStartupContextLimit}
-                            setSemanticSearch={setSemanticSearch}
-                            setSemanticIndex={setSemanticIndex}
-                            commitSemanticEmbedSenders={commitSemanticEmbedSenders}
-                            setSemanticEmbedMinLength={setSemanticEmbedMinLength}
-                            flushSemanticMinLength={flushSemanticMinLength}
-                            setSemanticEmbedMaxChars={setSemanticEmbedMaxChars}
-                            flushSemanticMaxChars={flushSemanticMaxChars}
-                        />
+                        >
+                            <SemanticMemoryHubSection
+                                integrations={integrations}
+                                credentialsMeta={credentialsMeta}
+                                testResults={integrationTestResults}
+                                testRunning={integrationTestRunning}
+                                semanticSearchEnabled={semanticSearchEnabled}
+                                semanticEmbedIndex={semanticEmbedIndex}
+                                semanticEmbedSenders={semanticEmbedSenders}
+                                semanticEmbedMinLength={semanticEmbedMinLength}
+                                semanticEmbedMaxChars={semanticEmbedMaxChars}
+                                memoryRemoteSelective={memoryRemoteSelective}
+                                setMemoryRemoteSelective={setMemoryRemoteSelective}
+                                memoryOllamaGateEnabled={memoryOllamaGateEnabled}
+                                setMemoryOllamaGateEnabled={setMemoryOllamaGateEnabled}
+                                memoryFullRemote={memoryFullRemote}
+                                setMemoryFullRemote={setMemoryFullRemote}
+                                memoryGeminiGateEnabled={memoryGeminiGateEnabled}
+                                setMemoryGeminiGateEnabled={setMemoryGeminiGateEnabled}
+                                memoryGateModel={memoryGateModel}
+                                setMemoryGateModel={setMemoryGateModel}
+                                flushMemoryGateModel={flushMemoryGateModel}
+                                memoryOllamaModel={memoryOllamaModel}
+                                setMemoryOllamaModel={setMemoryOllamaModel}
+                                flushMemoryOllamaModel={flushMemoryOllamaModel}
+                                memoryOllamaUrl={memoryOllamaUrl}
+                                setMemoryOllamaUrl={setMemoryOllamaUrl}
+                                flushMemoryOllamaUrl={flushMemoryOllamaUrl}
+                                memoryGateRetries={memoryGateRetries}
+                                setMemoryGateRetries={setMemoryGateRetries}
+                                flushMemoryGateRetries={flushMemoryGateRetries}
+                                memoryGateTimeoutSec={memoryGateTimeoutSec}
+                                setMemoryGateTimeoutSec={setMemoryGateTimeoutSec}
+                                flushMemoryGateTimeoutSec={flushMemoryGateTimeoutSec}
+                                memorySalienceDebug={memorySalienceDebug}
+                                setMemorySalienceDebug={setMemorySalienceDebug}
+                                chatStartupContextLimit={chatStartupContextLimit}
+                                setChatStartupContextLimit={setChatStartupContextLimit}
+                                flushChatStartupContextLimit={flushChatStartupContextLimit}
+                                setSemanticSearch={setSemanticSearch}
+                                setSemanticIndex={setSemanticIndex}
+                                commitSemanticEmbedSenders={commitSemanticEmbedSenders}
+                                setSemanticEmbedMinLength={setSemanticEmbedMinLength}
+                                flushSemanticMinLength={flushSemanticMinLength}
+                                setSemanticEmbedMaxChars={setSemanticEmbedMaxChars}
+                                flushSemanticMaxChars={flushSemanticMaxChars}
+                            />
+                        </BrainAndIntegrationsPanels>
+                        <EnvReferenceSection />
                         <DotEnvFileSection socket={socket} />
                         <div className="grid min-h-0 grid-cols-1 gap-6 xl:grid-cols-2 xl:gap-8 xl:[grid-template-rows:1fr] xl:items-stretch">
                             <div className="flex flex-col gap-4 xl:h-full xl:min-h-0 xl:justify-start xl:gap-5 xl:py-1">
@@ -2059,11 +2935,11 @@ const SettingsWindow = ({
                                         Interface
                                     </h3>
                                     <div className={rowClass}>
-                                        <span className="text-zinc-100">Mostrar visualização do chat</span>
+                                        <span className="text-zinc-100">Mostrar histórico do chat</span>
                                         <SettingsSwitch
                                             checked={showChatVisualization}
                                             onCheckedChange={setShowChatVisualization}
-                                            ariaLabel="Mostrar chat"
+                                            ariaLabel="Mostrar histórico do chat (a barra de mensagem permanece)"
                                         />
                                     </div>
                                 </section>

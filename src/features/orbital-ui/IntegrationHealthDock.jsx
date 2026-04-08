@@ -1,5 +1,5 @@
 import React from 'react';
-import { Database, Sparkles, Webhook } from 'lucide-react';
+import { Database, Server, Sparkles, Webhook } from 'lucide-react';
 
 const iconSize = 16;
 const stroke = 1.35;
@@ -60,7 +60,7 @@ function IntegrationHealthDock({ health, onOpenSettings }) {
         <div
             className="fixed z-[38] pointer-events-none transition-opacity duration-300"
             style={{ right: 20, bottom: 28 }}
-            aria-label="Estado das integrações (teste a cada minuto)"
+            aria-label="Estado das integrações e Ollama (teste a cada minuto)"
         >
             <div className="pointer-events-auto flex flex-row items-center gap-0.5 rounded-full border border-white/[0.08] bg-zinc-950/35 px-1 py-1 shadow-[0_4px_24px_rgba(0,0,0,0.45),inset_0_1px_0_rgba(255,255,255,0.04)] backdrop-blur-2xl">
                 {row('supabase', Database, 'Supabase')}
@@ -68,6 +68,8 @@ function IntegrationHealthDock({ health, onOpenSettings }) {
                 {row('comfyui', Sparkles, 'ComfyUI')}
                 <span className="mx-0.5 h-4 w-px bg-white/[0.06]" aria-hidden />
                 {row('webhooks', Webhook, 'n8n / webhooks')}
+                <span className="mx-0.5 h-4 w-px bg-white/[0.06]" aria-hidden />
+                {row('ollama', Server, 'Ollama')}
             </div>
         </div>
     );

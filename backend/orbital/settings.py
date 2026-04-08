@@ -16,6 +16,17 @@ SEMANTIC_MEMORY_DEFAULTS: Dict[str, Any] = {
     "semantic_embed_min_length": 24,
     "semantic_embed_max_chars": 8000,
     "chat_startup_context_limit": 100,
+    "memory_remote_selective": True,
+    "memory_full_remote": False,
+    "memory_ollama_gate_enabled": True,
+    # Compat com chave antiga salva no banco.
+    "memory_gemini_gate_enabled": True,
+    "memory_gate_model": "",
+    "memory_ollama_model": "",
+    "memory_ollama_url": "",
+    "memory_gate_retries": 3,
+    "memory_gate_timeout_sec": 20.0,
+    "memory_salience_debug": False,
 }
 
 

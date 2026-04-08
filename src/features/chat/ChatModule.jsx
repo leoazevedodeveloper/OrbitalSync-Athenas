@@ -27,7 +27,9 @@ const ChatModule = ({
     messagesRightInset = 14,
     isImageGenerating = false,
     imageGeneratingCaption,
-    onMouseDown
+    onMouseDown,
+    /** Se false, oculta bolhas/histórico; barra de digitar e cabeçalho ATHENAS permanecem. */
+    showMessageTranscript = true
 }) => {
     const fileInputRef = useRef(null);
     const chatTextareaRef = useRef(null);
@@ -139,8 +141,9 @@ const ChatModule = ({
     }, [messages]);
 
     useLayoutEffect(() => {
+        if (!showMessageTranscript) return;
         messagesEndRef.current?.scrollIntoView({ behavior: 'auto', block: 'end' });
-    }, [scrollSignature]);
+    }, [scrollSignature, showMessageTranscript]);
 
     const adjustChatTextareaHeight = () => {
         const el = chatTextareaRef.current;
@@ -247,6 +250,7 @@ const ChatModule = ({
                 }
             `}</style>
             {/* Mensagens em toda a largura: ATHENAS à esquerda, tu à direita */}
+            {showMessageTranscript ? (
             <div
                 id="chat"
                 onMouseDown={onMouseDown}
@@ -427,6 +431,7 @@ const ChatModule = ({
                 </div>
                 </div>
             </div>
+            ) : null}
 
             {isImageGenerating && (
                 <div className="fixed inset-0 z-[45] flex items-center justify-center pointer-events-none bg-black/20">
@@ -616,7 +621,8 @@ function areChatPropsEqual(prev, next) {
         prev.messagesLeftInset === next.messagesLeftInset &&
         prev.messagesRightInset === next.messagesRightInset &&
         prev.isImageGenerating === next.isImageGenerating &&
-        prev.imageGeneratingCaption === next.imageGeneratingCaption
+        prev.imageGeneratingCaption === next.imageGeneratingCaption &&
+        prev.showMessageTranscript === next.showMessageTranscript
     );
 }
 

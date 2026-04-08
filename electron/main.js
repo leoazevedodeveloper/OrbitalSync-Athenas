@@ -1,7 +1,40 @@
 const { app, BrowserWindow, ipcMain, dialog } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { spawn, execSync } = require('child_process');
+const { spawn, spawnSync, execSync } = require('child_process');
+
+/**
+ * O processo Electron não lê `.env` sozinho (ao contrário do Python com python-dotenv).
+ * Carrega a raiz do repo sem sobrescrever variáveis já definidas no sistema/atalho.
+ */
+function loadRootEnvFile() {
+    const envPath = path.join(__dirname, '../.env');
+    if (!fs.existsSync(envPath)) return;
+    let raw;
+    try {
+        raw = fs.readFileSync(envPath, 'utf8');
+    } catch {
+        return;
+    }
+    for (const line of raw.split(/\r?\n/)) {
+        const trimmed = line.trim();
+        if (!trimmed || trimmed.startsWith('#')) continue;
+        const eq = trimmed.indexOf('=');
+        if (eq <= 0) continue;
+        const key = trimmed.slice(0, eq).trim();
+        let val = trimmed.slice(eq + 1).trim();
+        if (
+            (val.startsWith('"') && val.endsWith('"')) ||
+            (val.startsWith("'") && val.endsWith("'"))
+        ) {
+            val = val.slice(1, -1);
+        }
+        if (!key || process.env[key] !== undefined) continue;
+        process.env[key] = val;
+    }
+}
+
+loadRootEnvFile();
 
 // Use ANGLE D3D11 backend - more stable on Windows while keeping WebGL working
 // This fixes "GPU state invalid after WaitForGetOffsetInRange" error
@@ -12,6 +45,7 @@ app.commandLine.appendSwitch('ignore-gpu-blocklist');
 let mainWindow;
 let pythonProcess;
 let cloudflaredProcess;
+let ollamaProcess;
 
 const AMBIENTE_DIR = path.join(__dirname, '../ambiente');
 
@@ -142,6 +176,229 @@ function startCloudflaredTunnel() {
     });
 }
 
+/**
+ * Servidor local Ollama (API em :11434): `ollama serve`.
+ * Desligar: ORBITAL_SKIP_OLLAMA=1
+ * Se a porta 11434 já estiver em uso, não inicia outro processo (e não encerra o existente ao sair).
+ */
+function startOllama() {
+    if (process.env.ORBITAL_SKIP_OLLAMA === '1') {
+        writeOrbitalLog('info', '[Ollama] Ignorado (ORBITAL_SKIP_OLLAMA=1).');
+        return;
+    }
+    checkBackendPort(11434).then((portInUse) => {
+        if (portInUse) {
+            writeOrbitalLog(
+                'info',
+                '[Ollama] Porta 11434 em uso — servidor já ativo; não iniciando segundo processo.'
+            );
+            return;
+        }
+        writeOrbitalLog('info', '[Ollama] Iniciando ollama serve…');
+        ollamaProcess = spawn('ollama', ['serve'], {
+            shell: false,
+            windowsHide: true,
+        });
+
+        ollamaProcess.stdout.on('data', (data) => {
+            writeOrbitalLog('info', String(data));
+        });
+        ollamaProcess.stderr.on('data', (data) => {
+            writeOrbitalLog('error', String(data));
+        });
+        ollamaProcess.on('exit', (code, signal) => {
+            writeOrbitalLog('warn', `[Ollama] Processo terminou (code=${code}, signal=${signal}).`);
+            ollamaProcess = null;
+        });
+        ollamaProcess.on('error', (err) => {
+            writeOrbitalLog('error', `[Ollama] Falha ao iniciar: ${err.message}`);
+            ollamaProcess = null;
+        });
+    });
+}
+
+/** Caminho do CLI: ORBITAL_DOCKER_CLI → docker.exe do Docker Desktop (Windows) → `docker` no PATH */
+let _dockerCliResolved;
+function resolveDockerCli() {
+    if (_dockerCliResolved !== undefined) return _dockerCliResolved;
+    const fromEnv = (process.env.ORBITAL_DOCKER_CLI || '').trim();
+    if (fromEnv && fs.existsSync(fromEnv)) {
+        _dockerCliResolved = fromEnv;
+        return _dockerCliResolved;
+    }
+    if (process.platform === 'win32') {
+        const pf = process.env.ProgramFiles || 'C:\\Program Files';
+        const bundled = path.join(pf, 'Docker', 'Docker', 'resources', 'bin', 'docker.exe');
+        if (fs.existsSync(bundled)) {
+            _dockerCliResolved = bundled;
+            return _dockerCliResolved;
+        }
+    }
+    _dockerCliResolved = 'docker';
+    return _dockerCliResolved;
+}
+
+function dockerDaemonReachable() {
+    return new Promise((resolve) => {
+        const cli = resolveDockerCli();
+        const c = spawn(cli, ['info'], { shell: false, windowsHide: true });
+        c.on('error', () => resolve(false));
+        c.on('exit', (code) => resolve(code === 0));
+    });
+}
+
+function sleepMs(ms) {
+    return new Promise((r) => setTimeout(r, ms));
+}
+
+/** Windows: `…\Docker\Docker\Docker Desktop.exe` ou ORBITAL_DOCKER_DESKTOP_EXE */
+function resolveDockerDesktopExe() {
+    const fromEnv = (process.env.ORBITAL_DOCKER_DESKTOP_EXE || '').trim();
+    if (fromEnv && fs.existsSync(fromEnv)) return fromEnv;
+    if (process.platform !== 'win32') return null;
+    const pf = process.env.ProgramFiles || 'C:\\Program Files';
+    const candidate = path.join(pf, 'Docker', 'Docker', 'Docker Desktop.exe');
+    return fs.existsSync(candidate) ? candidate : null;
+}
+
+/**
+ * Sem daemon ativo, `docker start` falha. No Windows podemos abrir o Docker Desktop e esperar.
+ * Desligar auto-abertura: ORBITAL_START_DOCKER_DESKTOP=0
+ */
+function tryLaunchDockerDesktopWindows() {
+    if (process.env.ORBITAL_START_DOCKER_DESKTOP === '0') {
+        writeOrbitalLog('info', '[Docker] Não abrir Docker Desktop (ORBITAL_START_DOCKER_DESKTOP=0).');
+        return false;
+    }
+    const exe = resolveDockerDesktopExe();
+    if (!exe) {
+        writeOrbitalLog(
+            'warn',
+            '[Docker] Docker Desktop.exe não encontrado. Instala o Docker Desktop ou define ORBITAL_DOCKER_DESKTOP_EXE.'
+        );
+        return false;
+    }
+    try {
+        const child = spawn(exe, [], { detached: true, stdio: 'ignore' });
+        child.unref();
+        writeOrbitalLog('info', `[Docker] A abrir Docker Desktop (daemon estava inacessível)…`);
+        return true;
+    } catch (e) {
+        writeOrbitalLog('error', `[Docker] Falha ao abrir Docker Desktop: ${e.message}`);
+        return false;
+    }
+}
+
+async function waitForDockerDaemon(maxMs, intervalMs) {
+    const t0 = Date.now();
+    while (Date.now() - t0 < maxMs) {
+        if (await dockerDaemonReachable()) return true;
+        await sleepMs(intervalMs);
+    }
+    return false;
+}
+
+function runDockerStart(name) {
+    const cli = resolveDockerCli();
+    writeOrbitalLog('info', `[Docker] docker start "${name}" (${cli})…`);
+    const child = spawn(cli, ['start', name], { shell: false, windowsHide: true });
+    child.stdout.on('data', (data) => {
+        const s = String(data).trim();
+        if (s) writeOrbitalLog('info', `[Docker] ${name}: ${s}`);
+    });
+    child.stderr.on('data', (data) => {
+        const s = String(data).trim();
+        if (s) writeOrbitalLog('warn', `[Docker] ${name}: ${s}`);
+    });
+    child.on('exit', (code) => {
+        if (code === 0) {
+            writeOrbitalLog('info', `[Docker] Container "${name}" OK (iniciado ou já em execução).`);
+        } else {
+            writeOrbitalLog(
+                'warn',
+                `[Docker] docker start "${name}" saiu com código ${code}. Container existe?`
+            );
+        }
+    });
+    child.on('error', (err) => {
+        writeOrbitalLog('error', `[Docker] Não foi possível executar docker para "${name}": ${err.message}`);
+    });
+}
+
+/**
+ * `docker start` no arranque (ex.: n8n). Não para containers ao fechar o app.
+ * Desligar: ORBITAL_SKIP_DOCKER_START=1
+ * Nomes (vírgula): ORBITAL_DOCKER_CONTAINERS=n8n (default: n8n)
+ * Windows: se o daemon não responder, tenta abrir Docker Desktop (exceto ORBITAL_START_DOCKER_DESKTOP=0).
+ * Espera: ORBITAL_DOCKER_WAIT_MS (default 180000)
+ */
+function startDockerContainers() {
+    if (process.env.ORBITAL_SKIP_DOCKER_START === '1') {
+        writeOrbitalLog('info', '[Docker] Ignorado (ORBITAL_SKIP_DOCKER_START=1).');
+        return;
+    }
+    const raw = (process.env.ORBITAL_DOCKER_CONTAINERS || 'n8n').trim();
+    if (!raw) {
+        writeOrbitalLog('info', '[Docker] ORBITAL_DOCKER_CONTAINERS vazio — nada a iniciar.');
+        return;
+    }
+    const names = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    const waitRaw = (process.env.ORBITAL_DOCKER_WAIT_MS || '180000').trim();
+    const maxWait = Math.max(5000, parseInt(waitRaw, 10) || 180000);
+
+    void (async () => {
+        const cli = resolveDockerCli();
+        writeOrbitalLog('info', `[Docker] CLI: ${cli}`);
+        let ok = await dockerDaemonReachable();
+        if (!ok && process.platform === 'win32') {
+            tryLaunchDockerDesktopWindows();
+            writeOrbitalLog('info', `[Docker] A aguardar daemon (até ${Math.round(maxWait / 1000)}s)…`);
+            ok = await waitForDockerDaemon(maxWait, 2000);
+        }
+        if (!ok) {
+            writeOrbitalLog(
+                'warn',
+                '[Docker] Daemon indisponível — não foi possível iniciar containers. Abre o Docker Desktop (ou define ORBITAL_START_DOCKER_DESKTOP=0 e abre manualmente).'
+            );
+            return;
+        }
+        for (const name of names) {
+            runDockerStart(name);
+        }
+    })();
+}
+
+function envFlagOn(name) {
+    const v = (process.env[name] || '').trim().toLowerCase();
+    return v === '1' || v === 'true' || v === 'yes';
+}
+
+/** Opcional: ORBITAL_DOCKER_STOP_ON_QUIT=1 — mesma lista que ORBITAL_DOCKER_CONTAINERS (default n8n). */
+function stopDockerContainersOnQuit() {
+    if (!envFlagOn('ORBITAL_DOCKER_STOP_ON_QUIT')) return;
+    const raw = (process.env.ORBITAL_DOCKER_CONTAINERS || 'n8n').trim();
+    if (!raw) return;
+    const names = raw.split(',').map((s) => s.trim()).filter(Boolean);
+    const cli = resolveDockerCli();
+    writeOrbitalLog('info', `[Docker] ORBITAL_DOCKER_STOP_ON_QUIT: a parar ${names.join(', ')}…`);
+    for (const name of names) {
+        try {
+            const r = spawnSync(cli, ['stop', name], { shell: false, windowsHide: true, encoding: 'utf8' });
+            if (r.status === 0) {
+                writeOrbitalLog('info', `[Docker] Container "${name}" parado (ORBITAL_DOCKER_STOP_ON_QUIT).`);
+            } else {
+                const err = (r.stderr || r.stdout || '').trim();
+                writeOrbitalLog(
+                    'warn',
+                    `[Docker] docker stop "${name}" saiu com ${r.status}${err ? `: ${err}` : ''}`
+                );
+            }
+        } catch (e) {
+            writeOrbitalLog('warn', `[Docker] docker stop "${name}": ${e.message}`);
+        }
+    }
+}
+
 function createWindow() {
     mainWindow = new BrowserWindow({
         width: 1920,
@@ -261,7 +518,9 @@ app.whenReady().then(() => {
         return r.filePaths[0];
     });
 
+    startDockerContainers();
     startCloudflaredTunnel();
+    startOllama();
 
     /**
      * Interface primeiro, backend em paralelo: o renderer mostra o boot real enquanto o Python sobe.
@@ -315,7 +574,21 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
-    writeOrbitalLog('info', 'App closing... Encerrando backend e Cloudflared.');
+    writeOrbitalLog('info', 'App closing... Encerrando backend, Ollama (se iniciado por aqui) e Cloudflared.');
+    stopDockerContainersOnQuit();
+
+    if (ollamaProcess) {
+        if (process.platform === 'win32') {
+            try {
+                execSync(`taskkill /pid ${ollamaProcess.pid} /f /t`);
+            } catch (e) {
+                writeOrbitalLog('error', `Falha ao encerrar Ollama: ${e.message}`);
+            }
+        } else {
+            ollamaProcess.kill('SIGKILL');
+        }
+        ollamaProcess = null;
+    }
 
     if (cloudflaredProcess) {
         if (process.platform === 'win32') {

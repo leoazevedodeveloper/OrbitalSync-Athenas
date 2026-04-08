@@ -82,6 +82,11 @@ trigger_webhook_tool = {
     "description": (
         "Calls a configured HTTP webhook by id (see config/webhooks.json), e.g. n8n automations "
         "for Spotify, ClickUp, Google Calendar. Optional payload merges into JSON body. "
+        "Spotify hook `athena-spotify`: payload.action may be pause, play, resume, next, previous, volume, "
+        "list_playlists ( Lista playlists do usuário no Spotify; resposta JSON com playlists ), "
+        "switch_playlist / play_playlist + playlist_uri, "
+        "play_track + track_name ou track_uri (+ artist opcional), play_genre + genre. "
+        "Perguntas tipo 'quais playlists' → list_playlists. "
         "Google Calendar hook `athena-google-calendar`: use calendar_op `create` (default; title, starts_at_iso, …), "
         "`delete` (event_id), or `list` (optional time_min/time_max ISO; default próximos 7 dias)."
     ),
@@ -95,8 +100,9 @@ trigger_webhook_tool = {
             "payload": {
                 "type": "OBJECT",
                 "description": (
-                    "Merged into the webhook JSON body after hook defaults. For Spotify/n8n ALWAYS set "
-                    '`action` (e.g. volume, next, pause) AND any fields (e.g. {"action":"volume","volume_percent":50}). '
+                    "Merged into the webhook JSON body after hook defaults. For Spotify (`athena-spotify`) set "
+                    '`action` (pause, play, resume, next, previous, volume, list_playlists, switch_playlist, play_track, play_genre, playlist) '
+                    "and fields like volume_percent, playlist_uri, track_name, artist, genre. "
                     "If you omit action but send volume_percent/volume, action is assumed to be volume."
                 ),
             },
@@ -108,8 +114,8 @@ trigger_webhook_tool = {
 search_chat_history_tool = {
     "name": "search_chat_history",
     "description": (
-        "Searches persisted chat history: semantic similarity first, then full-text, then substring. "
-        "Use when Leo asks if you remember discussing a topic; natural language or keywords both work."
+        "Searches chat history: semantic cloud recall plus keyword scan of the full local transcript. "
+        "Use when Leo asks if you remember a topic; natural language or keywords both work."
     ),
     "parameters": {
         "type": "OBJECT",

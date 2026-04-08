@@ -151,6 +151,8 @@ function App() {
     const [bootSettingsReady, setBootSettingsReady] = useState(false);
     const [bootAuthReady, setBootAuthReady] = useState(false);
     const [bootHistoryReady, setBootHistoryReady] = useState(false);
+    /** Primeiro `integration_test_result` após connect (dock sem “pending” ao abrir o workspace). */
+    const [bootIntegrationsReady, setBootIntegrationsReady] = useState(false);
     /** pending | skipped | running | unavailable | standalone */
     const [cloudflaredBoot, setCloudflaredBoot] = useState('pending');
 
@@ -231,6 +233,7 @@ function App() {
         supabase: { tier: 'pending' },
         comfyui: { tier: 'pending' },
         webhooks: { tier: 'pending' },
+        ollama: { tier: 'pending' },
     });
     const showSettingsRef = useRef(false);
     useEffect(() => {
@@ -613,13 +616,16 @@ function App() {
         socket.on('connect', () => {
             setStatus('Connected');
             setSocketConnected(true);
+            setBootIntegrationsReady(false);
             socket.emit('get_settings');
             socket.emit('get_chat_history', { limit: 120 });
             socket.emit('orbital_sync_boot');
+            /* Testes de integração são disparados pelo servidor no connect; aqui só o refresh periódico. */
         });
         socket.on('disconnect', () => {
             setStatus('Disconnected');
             setSocketConnected(false);
+            setBootIntegrationsReady(false);
         });
         socket.on('status', (data) => {
             const msg = data?.msg ?? '';
@@ -1119,6 +1125,7 @@ function App() {
             socket.emit('get_settings');
             socket.emit('get_chat_history', { limit: 120 });
             socket.emit('orbital_sync_boot');
+            socket.emit('test_integrations');
         }
 
         // Initialize Hand Landmarker
@@ -1251,15 +1258,18 @@ function App() {
                     supabase: { tier: 'down' },
                     comfyui: { tier: 'down' },
                     webhooks: { tier: 'down' },
+                    ollama: { tier: 'down' },
                 });
-                return;
+            } else {
+                const r = payload.results || {};
+                setIntegrationHealth({
+                    supabase: { tier: r.supabase?.tier || 'down' },
+                    comfyui: { tier: r.comfyui?.tier || 'down' },
+                    webhooks: { tier: r.webhooks?.tier || 'down' },
+                    ollama: { tier: r.ollama?.tier || 'down' },
+                });
             }
-            const r = payload.results || {};
-            setIntegrationHealth({
-                supabase: { tier: r.supabase?.tier || 'down' },
-                comfyui: { tier: r.comfyui?.tier || 'down' },
-                webhooks: { tier: r.webhooks?.tier || 'down' },
-            });
+            setBootIntegrationsReady(true);
         };
         socket.on('integration_test_result', onIntegrationTestResult);
         return () => socket.off('integration_test_result', onIntegrationTestResult);
@@ -1269,9 +1279,7 @@ function App() {
         if (!socketConnected) {
             return undefined;
         }
-        const run = () => socket.emit('test_integrations');
-        run();
-        const id = window.setInterval(run, 60_000);
+        const id = window.setInterval(() => socket.emit('test_integrations'), 60_000);
         return () => window.clearInterval(id);
     }, [socketConnected]);
 
@@ -2173,6 +2181,7 @@ function App() {
             settings: bootSettingsReady,
             auth: bootAuthReady,
             history: bootHistoryReady,
+            integrations: bootIntegrationsReady,
             cloudflared: cloudflaredBoot,
         }),
         [
@@ -2181,12 +2190,13 @@ function App() {
             bootSettingsReady,
             bootAuthReady,
             bootHistoryReady,
+            bootIntegrationsReady,
             cloudflaredBoot,
         ]
     );
 
     return (
-        <div className="h-screen w-screen bg-[#020202] text-zinc-100 font-sans overflow-hidden flex flex-col relative selection:bg-zinc-800 selection:text-white">
+        <div className="h-screen w-screen bg-black text-zinc-100 font-sans overflow-hidden flex flex-col relative selection:bg-zinc-800 selection:text-white">
 
             {/* --- PREMIUM UI LAYER --- */}
 
@@ -2225,7 +2235,7 @@ function App() {
             )}
 
             {/* Fundo uniforme: gradiente radial + noise (overlay) clarificavam o centro e vazavam pelo
-                canvas transparente da orb → vulto. Visualizer agora pinta #020202 a cada frame. */}
+                canvas transparente da orb → vulto. Visualizer pinta #000 a cada frame. */}
 
             {/* Top Bar (Draggable) — oculto nas configurações para não competir com o painel (z-index + um único fluxo de fechar) */}
             {!showSettings && (
@@ -2288,7 +2298,7 @@ function App() {
                 {/* Central Visualizer (AI Audio) */}
                 <div
                     id="visualizer"
-                    className={`absolute flex items-center justify-center transition-all duration-500 
+                    className={`absolute flex items-center justify-center overflow-hidden border-0 bg-transparent transition-all duration-500 outline-none focus:outline-none focus-visible:outline-none
                         ${isModularMode ? (activeDragElement === 'visualizer' ? 'ring-1 ring-white/10 bg-white/5' : '') + ' rounded-2xl pointer-events-auto' : 'pointer-events-none'}
                     `}
                     style={{
@@ -2432,8 +2442,8 @@ function App() {
                     />
                 )}
 
-                {/* Chat: margens mínimas nas bordas (toolbar só em baixo) */}
-                {showChatVisualization && !isImageGenerationActive && (
+                {/* Chat: histórico opcional (config); barra de digitar sempre visível */}
+                {!isImageGenerationActive && (
                     <ChatModule
                         messages={messages}
                         inputValue={inputValue}
@@ -2454,6 +2464,7 @@ function App() {
                         height={elementSizes.chat.h}
                         messagesLeftInset={14}
                         messagesRightInset={14}
+                        showMessageTranscript={showChatVisualization}
                         onMouseDown={(e) => handleMouseDown(e, 'chat')}
                     />
                 )}

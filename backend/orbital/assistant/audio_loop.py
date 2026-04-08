@@ -1732,7 +1732,7 @@ class AudioLoop:
                             async with self._session_send_lock:
                                 await self.session.send(input=start_message, end_of_turn=True)
 
-                        history = self.project_manager.get_recent_chat_history(
+                        history = self.project_manager.get_live_startup_history(
                             limit=_chat_startup_history_limit()
                         )
                         if history:
@@ -1763,7 +1763,7 @@ class AudioLoop:
                     else:
                         print(f"[ADA DEBUG] [RECONNECT] Connection restored.")
                         print(f"[ADA DEBUG] [RECONNECT] Fetching recent chat history to restore context...")
-                        history = self.project_manager.get_recent_chat_history(
+                        history = self.project_manager.get_live_startup_history(
                             limit=_chat_startup_history_limit()
                         )
                         if history:

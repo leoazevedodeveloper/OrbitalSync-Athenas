@@ -20,6 +20,9 @@ CREDENTIALS_PATH = REPO_ROOT / "data" / "local_credentials.json"
 ENV_MAP: Dict[str, str] = {
     "supabase_url": "SUPABASE_URL",
     "supabase_service_role_key": "SUPABASE_SERVICE_ROLE_KEY",
+    "supabase_anon_key": "SUPABASE_ANON_KEY",
+    "supabase_config_enabled": "SUPABASE_CONFIG_ENABLED",
+    "athena_settings_module_key": "ATHENA_SETTINGS_MODULE_KEY",
     "gemini_api_key": "GEMINI_API_KEY",
     "comfyui_base_url": "COMFYUI_BASE_URL",
     "comfyui_workflow_file": "COMFYUI_WORKFLOW_FILE",
@@ -63,7 +66,17 @@ def reload_env_from_dotenv_and_file() -> None:
     for file_key, env_key in ENV_MAP.items():
         if file_key not in data:
             continue
-        val = str(data[file_key]).strip()
+        raw = data[file_key]
+        if env_key == "SUPABASE_CONFIG_ENABLED":
+            if raw in (True, "true", "1", "yes", "on", "True"):
+                os.environ[env_key] = "true"
+            elif raw in (False, "false", "0", "no", "off", "False"):
+                os.environ[env_key] = "false"
+            else:
+                s = str(raw).strip().lower()
+                os.environ[env_key] = "true" if s in ("1", "true", "yes", "on") else "false"
+            continue
+        val = str(raw).strip()
         if val:
             os.environ[env_key] = val
 
@@ -94,6 +107,31 @@ def merge_save_and_apply(updates: Dict[str, Any]) -> Tuple[bool, str]:
         u = str(updates.get("supabase_service_role_key") or "").strip()
         if u:
             data["supabase_service_role_key"] = u
+
+    if "supabase_anon_key" in updates:
+        u = str(updates.get("supabase_anon_key") or "").strip()
+        if u:
+            data["supabase_anon_key"] = u
+
+    if "supabase_config_enabled" in updates:
+        v = updates.get("supabase_config_enabled")
+        if v is True or (
+            isinstance(v, str) and v.strip().lower() in ("1", "true", "yes", "on")
+        ):
+            data["supabase_config_enabled"] = True
+        elif v is False or (
+            isinstance(v, str) and v.strip().lower() in ("0", "false", "no", "off")
+        ):
+            data["supabase_config_enabled"] = False
+        else:
+            data.pop("supabase_config_enabled", None)
+
+    if "athena_settings_module_key" in updates:
+        u = str(updates.get("athena_settings_module_key") or "").strip()
+        if u:
+            data["athena_settings_module_key"] = u
+        else:
+            data.pop("athena_settings_module_key", None)
 
     if "gemini_api_key" in updates:
         u = str(updates.get("gemini_api_key") or "").strip()
@@ -135,8 +173,12 @@ def build_credentials_public_meta() -> Dict[str, Any]:
     srk = (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or "").strip()
     anon = (os.getenv("SUPABASE_ANON_KEY") or "").strip()
     key = srk or anon
+    ex_cfg = (os.getenv("SUPABASE_CONFIG_ENABLED") or "").strip().lower()
+    supabase_remote_on = ex_cfg not in ("0", "false", "no", "off")
+    module_key = (os.getenv("ATHENA_SETTINGS_MODULE_KEY") or "athena").strip() or "athena"
     gemini = (os.getenv("GEMINI_API_KEY") or "").strip()
     supabase_secret_length = len(srk) if srk else len(anon)
+    supabase_service_role_key_length = len(srk)
     comfy = (os.getenv("COMFYUI_BASE_URL") or "http://127.0.0.1:2000").strip()
     from orbital.services.integrations.comfyui_client import comfyui_workflow_path_for_settings_meta
 
@@ -158,18 +200,23 @@ def build_credentials_public_meta() -> Dict[str, Any]:
         "supabase_url": url,
         "supabase_configured": bool(url and key),
         "supabase_host": host,
+        "supabase_config_enabled": supabase_remote_on,
+        "athena_settings_module_key": module_key,
+        "supabase_anon_key_length": len(anon) if anon else 0,
         "gemini_configured": bool(gemini),
         "pierre_configured": bool(pierre),
         "comfyui_base_url": comfy,
         "comfyui_workflow_file": wf,
         "secrets_visible_in_ui": expose,
         "supabase_secret_length": supabase_secret_length,
+        "supabase_service_role_key_length": supabase_service_role_key_length,
         "gemini_api_key_length": len(gemini),
         "pierre_api_key_length": len(pierre),
     }
     if expose:
         out["credentials_secrets"] = {
             "supabase_service_role_key": (os.getenv("SUPABASE_SERVICE_ROLE_KEY") or ""),
+            "supabase_anon_key": (os.getenv("SUPABASE_ANON_KEY") or ""),
             "gemini_api_key": (os.getenv("GEMINI_API_KEY") or ""),
             "pierre_api_key": (os.getenv("PIERRE_API_KEY") or ""),
         }

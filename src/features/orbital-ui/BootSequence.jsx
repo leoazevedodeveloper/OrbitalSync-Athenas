@@ -165,6 +165,15 @@ export default function BootSequence({
         }
     }, [ready.history, markLine]);
 
+    useEffect(() => {
+        if (ready.integrations) {
+            markLine(
+                'integrations',
+                '[ OK ] Ligações remotas — Supabase, ComfyUI, webhooks e Ollama testados'
+            );
+        }
+    }, [ready.integrations, markLine]);
+
     /* Progresso derivado dos gates */
     useEffect(() => {
         const parts = [
@@ -175,6 +184,7 @@ export default function BootSequence({
             ready.settings,
             ready.auth,
             ready.history,
+            ready.integrations,
         ];
         const done = parts.filter(Boolean).length;
         const pct = (done / parts.length) * 100;
@@ -192,6 +202,7 @@ export default function BootSequence({
             ready.settings &&
             ready.auth &&
             ready.history &&
+            ready.integrations &&
             cfDone;
 
         if (!all) return undefined;
@@ -236,7 +247,7 @@ export default function BootSequence({
             {show && (
                 <motion.div
                     key="boot"
-                    className="fixed inset-0 z-[20000] flex flex-col overflow-hidden select-none bg-[#020202] text-zinc-200 font-mono text-[11px] sm:text-[12px] leading-relaxed"
+                    className="fixed inset-0 z-[20000] flex flex-col overflow-hidden select-none bg-black text-zinc-200 font-mono text-[11px] sm:text-[12px] leading-relaxed"
                     initial={{ opacity: 1 }}
                     exit={{ opacity: 0 }}
                     transition={{ duration: 0.55, ease: [0.22, 1, 0.36, 1] }}

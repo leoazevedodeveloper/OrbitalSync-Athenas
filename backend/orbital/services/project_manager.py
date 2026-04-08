@@ -1,10 +1,15 @@
-import os
 import json
+import os
 import shutil
+import threading
 import time
 from pathlib import Path
-from typing import Optional
+from typing import Any, Dict, List, Optional, Set, Tuple
 
+from orbital.services.memory.salience import (
+    is_selective_remote_enabled,
+    should_sync_to_remote_memory,
+)
 from orbital.services.supabase.chat_history import (
     append_chat_message,
     fetch_recent_messages,
@@ -13,17 +18,81 @@ from orbital.services.supabase.chat_history import (
 
 SINGLE_PROJECT_NAME = "OrbitalSync"
 
+
+def _remote_memory_followup(
+    project: str,
+    sender: str,
+    text: str,
+    *,
+    mime_type: Optional[str] = None,
+    image_relpath: Optional[str] = None,
+) -> None:
+    """Gate Ollama + Supabase fora do caminho crítico (evita atrasar Gemini Live / chat)."""
+    try:
+        selective = is_selective_remote_enabled()
+        sync_remote, mem_reason = should_sync_to_remote_memory(
+            sender,
+            text,
+            selective=selective,
+            mime_type=mime_type,
+            image_relpath=image_relpath,
+        )
+        if not sync_remote:
+            if selective and (os.getenv("ORBITAL_MEMORY_SALIENCE_DEBUG") or "").strip().lower() in (
+                "1",
+                "true",
+                "yes",
+            ):
+                print(
+                    f"[MEMORY] Remoto omitido ({mem_reason}) "
+                    f"sender={sender!r} len={len((text or '').strip())}"
+                )
+            return
+
+        ok = append_chat_message(
+            project,
+            sender,
+            text,
+            mime_type=mime_type,
+            image_relpath=image_relpath,
+            memory_salience=mem_reason,
+        )
+        if not ok:
+            print(
+                f"[ProjectManager] Mensagem aprovada ({mem_reason}) ficou só no disco — Supabase erro/off."
+            )
+    except Exception as e:
+        print(f"[ProjectManager] [ERR] follow-up memória remota: {e!r}")
+
+
+def _entry_fingerprint(entry: Dict[str, Any]) -> Tuple[float, str]:
+    ts = float(entry.get("timestamp", 0) or 0.0)
+    text = str(entry.get("text", "") or "")[:160]
+    return (round(ts, 2), text)
+
+
+def _merge_search_matches(a: List[dict], b: List[dict], lim: int) -> List[dict]:
+    seen: Set[Tuple[float, str]] = set()
+    merged: List[dict] = []
+    for entry in a + b:
+        fp = _entry_fingerprint(entry)
+        if fp in seen:
+            continue
+        seen.add(fp)
+        merged.append(entry)
+    merged.sort(key=lambda e: float(e.get("timestamp", 0) or 0.0))
+    return merged[-lim:]
+
+
 class ProjectManager:
     def __init__(self, workspace_root: str):
         self.workspace_root = Path(workspace_root)
         self.projects_dir = self.workspace_root / "data" / "projects"
         self.current_project = SINGLE_PROJECT_NAME
-        
-        # Ensure projects root exists
+
         if not self.projects_dir.exists():
             self.projects_dir.mkdir(parents=True)
 
-        # Single-project mode: ensure only the assistant's project path exists.
         self._ensure_single_project_dirs()
 
     def _single_project_path(self) -> Path:
@@ -37,7 +106,6 @@ class ProjectManager:
         (project_path / "browser").mkdir(exist_ok=True)
 
     def create_project(self, name: str):
-        """Single-project mode: keeps only OrbitalSync as active context."""
         self._ensure_single_project_dirs()
         requested = (name or "").strip()
         if requested and requested != SINGLE_PROJECT_NAME:
@@ -48,7 +116,6 @@ class ProjectManager:
         return True, f"Single-project mode active: '{SINGLE_PROJECT_NAME}'."
 
     def switch_project(self, name: str):
-        """Single-project mode: keeps OrbitalSync as the only active context."""
         self._ensure_single_project_dirs()
         requested = (name or "").strip()
         if requested and requested != SINGLE_PROJECT_NAME:
@@ -60,11 +127,57 @@ class ProjectManager:
         return True, f"Using single project '{SINGLE_PROJECT_NAME}'."
 
     def list_projects(self):
-        """Single-project mode: always return only OrbitalSync."""
         return [SINGLE_PROJECT_NAME]
 
     def get_current_project_path(self):
         return self._single_project_path()
+
+    def _chat_log_path(self) -> Path:
+        return self.get_current_project_path() / "chat_history.jsonl"
+
+    def _tail_jsonl_messages(self, path: Path, limit: int) -> List[dict]:
+        lim = max(1, min(500, int(limit)))
+        if not path.is_file():
+            return []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                lines = f.readlines()
+        except OSError as e:
+            print(f"[ProjectManager] [ERR] Failed to read {path.name}: {e}")
+            return []
+        history: List[dict] = []
+        for line in lines[-lim:]:
+            try:
+                history.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return history
+
+    def _search_jsonl_tokens(self, path: Path, query: str, cap: int) -> List[dict]:
+        q = (query or "").strip()
+        lim = max(1, min(200, int(cap)))
+        if not q or not path.is_file():
+            return []
+
+        tokens = [t for t in q.casefold().split() if t]
+        if not tokens:
+            tokens = [q.casefold()]
+        matches: List[dict] = []
+        try:
+            with open(path, "r", encoding="utf-8") as f:
+                for line in f:
+                    try:
+                        entry = json.loads(line)
+                    except json.JSONDecodeError:
+                        continue
+                    text_fold = str(entry.get("text", "")).casefold()
+                    if all(tok in text_fold for tok in tokens):
+                        matches.append(entry)
+        except OSError as e:
+            print(f"[ProjectManager] [ERR] Failed to search chat history: {e}")
+            return []
+
+        return matches[-lim:]
 
     def log_chat(
         self,
@@ -74,8 +187,8 @@ class ProjectManager:
         mime_type: Optional[str] = None,
         image_relpath: Optional[str] = None,
     ):
-        """Appends a chat message to the current project's history."""
-        log_file = self.get_current_project_path() / "chat_history.jsonl"
+        """Transcrição completa no JSONL de imediato; gate Ollama + Supabase em thread (não bloqueia a IA)."""
+        log_file = self._chat_log_path()
         entry = {
             "timestamp": time.time(),
             "sender": sender,
@@ -86,32 +199,38 @@ class ProjectManager:
         if image_relpath:
             entry["image_relpath"] = image_relpath
 
-        if append_chat_message(
-            self.current_project,
-            sender,
-            text,
-            mime_type=mime_type,
-            image_relpath=image_relpath,
-        ):
+        log_file.parent.mkdir(parents=True, exist_ok=True)
+        try:
+            with open(log_file, "a", encoding="utf-8") as f:
+                f.write(json.dumps(entry) + "\n")
+        except OSError as e:
+            print(f"[ProjectManager] [ERR] Falha ao gravar transcript local: {e}")
             return
 
-        with open(log_file, "a", encoding="utf-8") as f:
-            f.write(json.dumps(entry) + "\n")
+        project = self.current_project
+        threading.Thread(
+            target=_remote_memory_followup,
+            args=(project, sender, text),
+            kwargs={"mime_type": mime_type, "image_relpath": image_relpath},
+            daemon=True,
+            name="orbital-remote-memory",
+        ).start()
 
     def save_cad_artifact(self, source_path: str, prompt: str):
-        """Copies a generated CAD file to the project's 'cad' folder."""
         if not os.path.exists(source_path):
             print(f"[ProjectManager] [ERR] Source file not found: {source_path}")
             return None
 
-        # Create a filename based on timestamp and prompt
         timestamp = int(time.time())
-        # Brief sanitization of prompt for filename
-        safe_prompt = "".join([c for c in prompt if c.isalnum() or c in (' ', '-', '_')])[:30].strip().replace(" ", "_")
+        safe_prompt = (
+            "".join([c for c in prompt if c.isalnum() or c in (" ", "-", "_")])[:30]
+            .strip()
+            .replace(" ", "_")
+        )
         filename = f"{timestamp}_{safe_prompt}.stl"
-        
+
         dest_path = self.get_current_project_path() / "cad" / filename
-        
+
         try:
             shutil.copy2(source_path, dest_path)
             print(f"[ProjectManager] Saved CAD artifact to: {dest_path}")
@@ -121,10 +240,6 @@ class ProjectManager:
             return None
 
     def get_project_context(self, max_file_size: int = 10000) -> str:
-        """
-        Gathers context about the current project for the AI.
-        Lists all files and reads text file contents (up to max_file_size bytes).
-        """
         project_path = self.get_current_project_path()
         if not project_path.exists():
             return f"Project '{self.current_project}' does not exist."
@@ -133,7 +248,6 @@ class ProjectManager:
         context_lines.append(f"Project directory: {project_path}")
         context_lines.append("")
 
-        # List all files recursively
         all_files = []
         for root, dirs, files in os.walk(project_path):
             for f in files:
@@ -149,8 +263,19 @@ class ProjectManager:
 
         context_lines.append("")
 
-        # Read text files (skip binary and large files)
-        text_extensions = {'.txt', '.py', '.js', '.jsx', '.ts', '.tsx', '.json', '.md', '.html', '.css', '.jsonl'}
+        text_extensions = {
+            ".txt",
+            ".py",
+            ".js",
+            ".jsx",
+            ".ts",
+            ".tsx",
+            ".json",
+            ".md",
+            ".html",
+            ".css",
+            ".jsonl",
+        }
         for rel_path in all_files:
             ext = os.path.splitext(rel_path)[1].lower()
             if ext not in text_extensions:
@@ -160,10 +285,12 @@ class ProjectManager:
             try:
                 file_size = full_path.stat().st_size
                 if file_size > max_file_size:
-                    context_lines.append(f"--- {rel_path} (too large: {file_size} bytes, skipped) ---")
+                    context_lines.append(
+                        f"--- {rel_path} (too large: {file_size} bytes, skipped) ---"
+                    )
                     continue
 
-                with open(full_path, 'r', encoding='utf-8', errors='ignore') as f:
+                with open(full_path, "r", encoding="utf-8", errors="ignore") as f:
                     content = f.read()
                 context_lines.append(f"--- {rel_path} ---")
                 context_lines.append(content)
@@ -173,85 +300,69 @@ class ProjectManager:
 
         return "\n".join(context_lines)
 
-    def get_recent_chat_history(self, limit: int = 10):
-        """Returns the last 'limit' chat messages from history."""
+    def get_ui_chat_transcript(self, limit: int = 120):
+        """
+        Histórico para o painel de chat (Socket `get_chat_history`): transcrição completa
+        em `chat_history.jsonl`, independente do que está só na nuvem.
+        """
+        log_file = self._chat_log_path()
+        if not log_file.is_file():
+            print(f"[ProjectManager] UI chat: 0 msg — {log_file.name} inexistente.")
+            return []
+        local = self._tail_jsonl_messages(log_file, limit)
+        print(
+            f"[ProjectManager] UI chat: {len(local)} msg(s) transcript "
+            f"({log_file.name}, limit={limit})"
+        )
+        return local
+
+    def get_live_startup_history(self, limit: int = 10):
+        """
+        Contexto injectado na sessão Live (arranque/reconnect): Supabase primeiro;
+        JSONL só se o remoto falhar (None).
+        """
         remote = fetch_recent_messages(self.current_project, limit)
         if remote is not None:
             print(
-                f"[ProjectManager] Histórico: {len(remote)} msg(s) via Supabase "
+                f"[ProjectManager] Live context: {len(remote)} msg(s) via Supabase "
                 f"(projeto={self.current_project!r}, limit={limit})"
             )
             return remote
 
-        log_file = self.get_current_project_path() / "chat_history.jsonl"
-        if not log_file.exists():
-            print(
-                f"[ProjectManager] Histórico: 0 msg — Supabase indisponível/erro e sem {log_file.name}"
-            )
-            return []
-            
-        try:
-            with open(log_file, "r", encoding="utf-8") as f:
-                lines = f.readlines()
-                
-            # Parse last N lines
-            history = []
-            for line in lines[-limit:]:
-                try:
-                    entry = json.loads(line)
-                    history.append(entry)
-                except json.JSONDecodeError:
-                    continue
-            print(
-                f"[ProjectManager] Histórico: {len(history)} msg(s) via disco "
-                f"({log_file.name}, limit={limit})"
-            )
-            return history
-        except Exception as e:
-            print(f"[ProjectManager] [ERR] Failed to read chat history: {e}")
-            return []
+        log_file = self._chat_log_path()
+        if log_file.is_file():
+            local = self._tail_jsonl_messages(log_file, limit)
+            if local:
+                print(
+                    f"[ProjectManager] Live context: {len(local)} msg(s) fallback "
+                    f"({log_file.name}, limit={limit}) — Supabase indisponível"
+                )
+                return local
+
+        print(f"[ProjectManager] Live context: 0 msg — Supabase erro/off e sem {log_file.name}.")
+        return []
 
     def search_chat_history(self, query: str, limit: int = 10):
-        """Search chat history by keyword/phrase, newest matches last for readable chronology."""
         q = (query or "").strip()
         lim = max(1, min(50, int(limit)))
         if not q:
             return []
 
+        log_file = self._chat_log_path()
+        local_hits = self._search_jsonl_tokens(log_file, q, max(lim * 4, 24))
+
         remote = search_messages(self.current_project, q, lim)
-        if remote is not None:
+        if remote is None:
+            out = local_hits[-lim:] if local_hits else []
             print(
-                f"[ProjectManager] Busca histórico: {len(remote)} match(es) via Supabase "
+                f"[ProjectManager] Busca histórico: {len(out)} match(es) disco "
                 f"(query={q!r}, limit={lim})"
             )
-            return remote
+            return out
 
-        log_file = self.get_current_project_path() / "chat_history.jsonl"
-        if not log_file.exists():
-            return []
-
-        tokens = [t for t in q.casefold().split() if t]
-        if not tokens:
-            tokens = [q.casefold()]
-        matches = []
-        try:
-            with open(log_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        entry = json.loads(line)
-                    except json.JSONDecodeError:
-                        continue
-                    text_fold = str(entry.get("text", "")).casefold()
-                    if all(tok in text_fold for tok in tokens):
-                        matches.append(entry)
-        except Exception as e:
-            print(f"[ProjectManager] [ERR] Failed to search chat history: {e}")
-            return []
-
-        out = matches[-lim:]
+        merged = _merge_search_matches(local_hits, remote, lim)
         print(
-            f"[ProjectManager] Busca histórico: {len(out)} match(es) via disco "
+            f"[ProjectManager] Busca histórico: {len(merged)} match(es) híbrido "
             f"(query={q!r}, limit={lim})"
         )
-        return out
-
+        return merged
