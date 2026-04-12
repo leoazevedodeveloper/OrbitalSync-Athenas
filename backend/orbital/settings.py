@@ -27,6 +27,19 @@ SEMANTIC_MEMORY_DEFAULTS: Dict[str, Any] = {
     "memory_gate_retries": 3,
     "memory_gate_timeout_sec": 20.0,
     "memory_salience_debug": False,
+    # "supabase" = Supabase + Ollama gate (sistema legado)
+    # "brain"    = Brain vault Obsidian only (sem Supabase)
+    # "both"     = Supabase + Brain vault em paralelo
+    "memory_backend": "brain",
+    # RAG do vault (chunks no Supabase pgvector; independente do histórico de chat)
+    "brain_rag_enabled": True,
+    "brain_rag_top_k": 8,
+    "brain_rag_chunk_max_chars": 1800,
+    "brain_rag_chunk_overlap": 200,
+    # Se semantic falhar (RPC/embed), usar busca keyword em search_brain
+    "brain_rag_semantic_fallback_keyword": True,
+    # Modo hybrid: máximo de hits keyword (substring) além do bloco semântico
+    "brain_rag_hybrid_keyword_limit": 15,
 }
 
 

@@ -9,7 +9,7 @@ venv/
 env/
 
 # ComfyUI — saídas geradas pela ATHENAS (cópia local)
-data/comfyui/imagens/
+integrations/comfyui/imagens/
 
 # Credenciais definidas pela UI (Supabase, Gemini, ComfyUI)
 data/local_credentials.json
@@ -42,3 +42,6 @@ out/
 # OS
 .DS_Store
 Thumbs.db
+
+# Logs locais (Electron / app)
+logs/

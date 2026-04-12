@@ -15,8 +15,21 @@ from orbital.services.supabase.chat_history import (
     fetch_recent_messages,
     search_messages,
 )
+from orbital.settings import SETTINGS
 
 SINGLE_PROJECT_NAME = "OrbitalSync"
+
+
+def _memory_backend() -> str:
+    return str(SETTINGS.get("memory_backend", "supabase")).strip().lower()
+
+
+def _supabase_enabled() -> bool:
+    return _memory_backend() in ("supabase", "both")
+
+
+def _brain_enabled() -> bool:
+    return _memory_backend() in ("brain", "both")
 
 
 def _remote_memory_followup(
@@ -28,6 +41,8 @@ def _remote_memory_followup(
     image_relpath: Optional[str] = None,
 ) -> None:
     """Gate Ollama + Supabase fora do caminho crítico (evita atrasar Gemini Live / chat)."""
+    if not _supabase_enabled():
+        return
     try:
         selective = is_selective_remote_enabled()
         sync_remote, mem_reason = should_sync_to_remote_memory(
@@ -318,28 +333,32 @@ class ProjectManager:
 
     def get_live_startup_history(self, limit: int = 10):
         """
-        Contexto injectado na sessão Live (arranque/reconnect): Supabase primeiro;
-        JSONL só se o remoto falhar (None).
+        Contexto injectado na sessão Live (arranque/reconnect).
+        Respeita memory_backend: supabase (primeiro Supabase, fallback JSONL),
+        brain (só JSONL local), both (Supabase primeiro, fallback JSONL).
         """
-        remote = fetch_recent_messages(self.current_project, limit)
-        if remote is not None:
-            print(
-                f"[ProjectManager] Live context: {len(remote)} msg(s) via Supabase "
-                f"(projeto={self.current_project!r}, limit={limit})"
-            )
-            return remote
+        backend = _memory_backend()
+
+        if _supabase_enabled():
+            remote = fetch_recent_messages(self.current_project, limit)
+            if remote is not None:
+                print(
+                    f"[ProjectManager] Live context: {len(remote)} msg(s) via Supabase "
+                    f"(projeto={self.current_project!r}, limit={limit}, backend={backend})"
+                )
+                return remote
 
         log_file = self._chat_log_path()
         if log_file.is_file():
             local = self._tail_jsonl_messages(log_file, limit)
             if local:
                 print(
-                    f"[ProjectManager] Live context: {len(local)} msg(s) fallback "
-                    f"({log_file.name}, limit={limit}) — Supabase indisponível"
+                    f"[ProjectManager] Live context: {len(local)} msg(s) via JSONL local "
+                    f"({log_file.name}, limit={limit}, backend={backend})"
                 )
                 return local
 
-        print(f"[ProjectManager] Live context: 0 msg — Supabase erro/off e sem {log_file.name}.")
+        print(f"[ProjectManager] Live context: 0 msg (backend={backend}).")
         return []
 
     def search_chat_history(self, query: str, limit: int = 10):
@@ -348,21 +367,30 @@ class ProjectManager:
         if not q:
             return []
 
+        backend = _memory_backend()
         log_file = self._chat_log_path()
         local_hits = self._search_jsonl_tokens(log_file, q, max(lim * 4, 24))
+
+        if not _supabase_enabled():
+            out = local_hits[-lim:] if local_hits else []
+            print(
+                f"[ProjectManager] Busca histórico: {len(out)} match(es) local "
+                f"(query={q!r}, limit={lim}, backend={backend})"
+            )
+            return out
 
         remote = search_messages(self.current_project, q, lim)
         if remote is None:
             out = local_hits[-lim:] if local_hits else []
             print(
                 f"[ProjectManager] Busca histórico: {len(out)} match(es) disco "
-                f"(query={q!r}, limit={lim})"
+                f"(query={q!r}, limit={lim}, backend={backend})"
             )
             return out
 
         merged = _merge_search_matches(local_hits, remote, lim)
         print(
             f"[ProjectManager] Busca histórico: {len(merged)} match(es) híbrido "
-            f"(query={q!r}, limit={lim})"
+            f"(query={q!r}, limit={lim}, backend={backend})"
         )
         return merged

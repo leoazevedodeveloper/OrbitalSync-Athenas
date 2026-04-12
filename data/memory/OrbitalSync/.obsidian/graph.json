@@ -1,12 +1,27 @@
 {
-  "collapse-filter": true,
+  "collapse-filter": false,
   "search": "",
   "showTags": false,
   "showAttachments": false,
   "hideUnresolved": false,
   "showOrphans": true,
-  "collapse-color-groups": true,
-  "colorGroups": [],
+  "collapse-color-groups": false,
+  "colorGroups": [
+    {
+      "query": "(path:\"00 - Core\") OR (path:\"02 - Skills\") OR (path:\"03 - Thinking\") OR (path:\"08 - System\")",
+      "color": {
+        "a": 1,
+        "rgb": 12668927
+      }
+    },
+    {
+      "query": "(path:\"01 - Memória\") OR (path:\"04 - Tasks\") OR (path:\"05 - Integrations\") OR (path:\"06 - State\") OR (path:\"07 - Logs\")",
+      "color": {
+        "a": 1,
+        "rgb": 4046896
+      }
+    }
+  ],
   "collapse-display": true,
   "showArrow": false,
   "textFadeMultiplier": 0,
@@ -17,6 +32,6 @@
   "repelStrength": 10,
   "linkStrength": 1,
   "linkDistance": 250,
-  "scale": 0.9999999999999996,
+  "scale": 1.401982897776056,
   "close": true
 }

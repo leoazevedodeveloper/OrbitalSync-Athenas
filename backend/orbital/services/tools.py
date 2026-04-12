@@ -228,6 +228,100 @@ remove_calendar_reminder_tool = {
     },
 }
 
+read_brain_tool = {
+    "name": "read_brain",
+    "description": (
+        "Reads a note from your persistent brain/memory vault (Obsidian). "
+        "Returns the note content with resolved wikilinks showing connected notes. "
+        "Use section/Note_name format (no .md extension needed)."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "note": {
+                "type": "STRING",
+                "description": (
+                    "Note path relative to vault: 'section/Note_name' "
+                    "(e.g. '00 - Core/Identidade', '06 - State/Contexto_atual')."
+                ),
+            }
+        },
+        "required": ["note"],
+    },
+}
+
+write_brain_tool = {
+    "name": "write_brain",
+    "description": (
+        "Writes or updates a note in your brain vault. Use 'append' to add info (logs, learnings, preferences). "
+        "Use 'overwrite' to replace state (current context, active tasks). "
+        "If the note doesn't exist, it will be created automatically. "
+        "Cannot write to read-only sections (00-Core, 02-Skills, 03-Thinking, 08-System)."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "note": {
+                "type": "STRING",
+                "description": "Note path: 'section/Note_name' (e.g. '01 - Memoria/Aprendizados').",
+            },
+            "content": {
+                "type": "STRING",
+                "description": "Markdown content. Include [[wikilinks]] to connect to related notes.",
+            },
+            "mode": {
+                "type": "STRING",
+                "description": "Write mode: 'append' adds to end, 'overwrite' replaces all content.",
+                "enum": ["overwrite", "append"],
+            },
+        },
+        "required": ["note", "content"],
+    },
+}
+
+search_brain_tool = {
+    "name": "search_brain",
+    "description": (
+        "Searches across ALL notes in your brain vault. "
+        "mode 'keyword' = exact substring (default). "
+        "mode 'semantic' = meaning similarity (embeddings + Supabase). "
+        "mode 'hybrid' = run semantic + keyword together (dedupe overlap); best when unsure. "
+        "Requires Gemini + Supabase brain index for semantic/hybrid semantic half."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "query": {
+                "type": "STRING",
+                "description": "Search query: keyword, phrase, or topic to find across all brain notes.",
+            },
+            "mode": {
+                "type": "STRING",
+                "description": "keyword | semantic | hybrid (semantic + literal substring, deduped).",
+                "enum": ["keyword", "semantic", "hybrid"],
+            },
+        },
+        "required": ["query"],
+    },
+}
+
+list_brain_tool = {
+    "name": "list_brain",
+    "description": (
+        "Lists sections and notes in your brain vault. "
+        "Use to discover what knowledge is available or check a section's contents before reading/writing."
+    ),
+    "parameters": {
+        "type": "OBJECT",
+        "properties": {
+            "section": {
+                "type": "STRING",
+                "description": "Optional: specific section (e.g. '01 - Memoria'). Omit to list all sections with their notes.",
+            }
+        },
+    },
+}
+
 tools_list = [{"function_declarations": [
     write_file_tool,
     read_directory_tool,
@@ -239,6 +333,10 @@ tools_list = [{"function_declarations": [
     start_timer_tool,
     add_calendar_reminder_tool,
     remove_calendar_reminder_tool,
+    read_brain_tool,
+    write_brain_tool,
+    search_brain_tool,
+    list_brain_tool,
 ]}]
 
 

@@ -4,6 +4,7 @@ import base64
 import binascii
 import io
 import json
+import logging
 import math
 import os
 import struct
@@ -12,7 +13,15 @@ import time
 import traceback
 import uuid
 from datetime import datetime
-from zoneinfo import ZoneInfo
+
+_mem_logger = logging.getLogger("orbital.brain")
+
+# Resposta mínima ao modelo após write_brain: evita eco do tipo "memória persistente atualizada".
+_WRITE_BRAIN_TOOL_SUCCESS_ACK = (
+    "[internal] Persistence OK. NEVER tell Leo you saved, updated, synced, or that "
+    "'persistent memory' / 'memória persistente' is updated; continue naturally with "
+    "no meta-commentary about storage or remembering systems."
+)
 
 import cv2
 import PIL.Image
@@ -29,24 +38,9 @@ if sys.version_info < (3, 11, 0):
     asyncio.TaskGroup = taskgroup.TaskGroup
     asyncio.ExceptionGroup = exceptiongroup.ExceptionGroup
 
+from orbital.paths import REPO_ROOT
+from orbital.services.brain import BrainVault
 from orbital.services.integrations.comfyui_client import generate_image_via_comfyui, resolved_comfyui_workflow_path
-
-
-def _chat_startup_history_limit() -> int:
-    """Últimas N mensagens injectadas na sessão Live ao ligar / reconnect (SETTINGS ou ORBITAL_CHAT_STARTUP_CONTEXT_LIMIT)."""
-    if "ORBITAL_CHAT_STARTUP_CONTEXT_LIMIT" in os.environ:
-        raw = (os.getenv("ORBITAL_CHAT_STARTUP_CONTEXT_LIMIT") or "").strip()
-        if raw:
-            try:
-                return max(10, min(500, int(raw)))
-            except ValueError:
-                pass
-    try:
-        from orbital.settings import SETTINGS
-
-        return max(10, min(500, int(SETTINGS.get("chat_startup_context_limit", 100))))
-    except Exception:
-        return 100
 from orbital.services.integrations.launch_apps import launch_app_by_id, list_launch_apps_catalog
 from orbital.services.integrations.agenda_google import (
     delete_google_calendar_event,
@@ -69,44 +63,15 @@ from .constants import (
     RECEIVE_SAMPLE_RATE,
     SEND_SAMPLE_RATE,
 )
-from .gemini_setup import config, get_gemini_client
+from .gemini_setup import build_live_config, get_gemini_client
+from .live_utils import (
+    chat_startup_history_limit,
+    iter_leaf_exceptions,
+    normalize_reminder_iso,
+    parse_reminder_starts_at,
+)
 from .pyaudio_ctx import pya
-
-
-def _leaf_exceptions(exc: BaseException):
-    """Expõe exceções reais dentro de ExceptionGroup (ex.: falha do TaskGroup)."""
-    if isinstance(exc, BaseExceptionGroup):
-        for e in exc.exceptions:
-            yield from _leaf_exceptions(e)
-    else:
-        yield exc
-
-
-def _parse_reminder_starts_at(raw: str):
-    """Retorna (unix_timestamp ou None, mensagem de erro ou None)."""
-    s = str(raw or "").strip()
-    if not s:
-        return None, "data/hora vazia"
-    if s.endswith("Z"):
-        s = s[:-1] + "+00:00"
-    try:
-        dt = datetime.fromisoformat(s)
-    except ValueError:
-        return None, "ISO 8601 inválido"
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=ZoneInfo("America/Sao_Paulo"))
-    return dt.timestamp(), None
-
-
-def _normalize_reminder_iso(raw: str) -> str:
-    """ISO 8601 normalizado para envio ao n8n (mesma lógica de fuso que starts)."""
-    s = str(raw or "").strip()
-    if s.endswith("Z"):
-        s = s[:-1] + "+00:00"
-    dt = datetime.fromisoformat(s)
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=ZoneInfo("America/Sao_Paulo"))
-    return dt.isoformat()
+from .webhook_tool_result import format_webhook_tool_result
 
 
 class AudioLoop:
@@ -158,12 +123,8 @@ class AudioLoop:
             s = 0.22
         self.vad_silence_duration_sec = max(0.08, min(0.85, s))
 
-        self.audio_in_queue = None
-        self.out_queue = None
-        self.paused = False
+        self.chat_buffer = {"sender": None, "text": ""}  # For aggregating chunks
 
-        self.chat_buffer = {"sender": None, "text": ""} # For aggregating chunks
-        
         # Track last transcription text to calculate deltas (Gemini sends cumulative text)
         self._last_input_transcription = ""
         self._last_output_transcription = ""
@@ -182,10 +143,13 @@ class AudioLoop:
 
         self.send_text_task = None
         self.stop_event = asyncio.Event()
-        
-        self.stop_event = asyncio.Event()
-        
-        self.permissions = {} # Default Empty (Will treat unset as True)
+
+        self.permissions = {
+            "read_brain": False,
+            "write_brain": False,
+            "search_brain": False,
+            "list_brain": False,
+        }
         self._pending_confirmations = {}
         self._assistant_timer_tasks: set = set()
 
@@ -205,14 +169,11 @@ class AudioLoop:
         # Após inject com end_of_turn=True o modelo gera um turno; descartamos só esse (áudio + transcrição) para não ouvir resumo no arranque.
         self._startup_output_turns_to_skip = 0
 
-        # Initialize ProjectManager
         from orbital.services.project_manager import ProjectManager
 
-        _here = os.path.abspath(__file__)
-        _backend_root = os.path.dirname(os.path.dirname(os.path.dirname(_here)))
-        project_root = os.path.dirname(_backend_root)
-        self.project_manager = ProjectManager(project_root)
-        
+        self.project_manager = ProjectManager(str(REPO_ROOT))
+        self.brain = BrainVault()
+
         # Sync Initial Project State
         if self.on_project_update:
             # We need to defer this slightly or just call it. 
@@ -228,6 +189,78 @@ class AudioLoop:
             cb(level, message, source)
         except Exception:
             pass
+
+    async def _inject_startup_context(self, *, is_reconnect: bool = False):
+        """Inject startup/reconnect context based on the active memory_backend."""
+        from orbital.settings import SETTINGS
+
+        backend = str(SETTINGS.get("memory_backend", "supabase")).strip().lower()
+        injected = False
+
+        # --- Chat transcript (supabase / both / brain fallback to JSONL) ---
+        if backend in ("supabase", "both"):
+            history = self.project_manager.get_live_startup_history(
+                limit=chat_startup_history_limit()
+            )
+            if history:
+                prefix = (
+                    "Connection was lost and re-established. Recent persisted transcript below.\n\n"
+                    if is_reconnect
+                    else "Persisted project chat transcript. Factual record of prior turns with Leo in this project. "
+                    "Use it when he asks about the past or for consistency; do not invent lines outside this log.\n\n"
+                )
+                context_msg = prefix
+                for entry in history:
+                    sender = entry.get("sender", "Unknown")
+                    text = entry.get("text", "")
+                    context_msg += f"[{sender}]: {text}\n"
+                if is_reconnect:
+                    context_msg += "\nWhen Leo asks about earlier topics, use the transcript above."
+
+                label = "RECONNECT" if is_reconnect else "MEMORY"
+                print(f"[ADA DEBUG] [{label}] Injecting chat history ({len(history)} messages, backend={backend})")
+                async with self._session_send_lock:
+                    await self.session.send(input=context_msg, end_of_turn=True)
+                self._startup_output_turns_to_skip = 1
+                self.clear_audio_queue()
+                injected = True
+
+        # --- Brain vault context (brain / both) ---
+        if backend in ("brain", "both"):
+            brain_parts: list[str] = []
+            loaded_files: list[str] = []
+            for section, _label in [
+                ("06 - State", "CURRENT STATE"),
+                ("01 - Memoria", "MEMORY"),
+            ]:
+                for md in sorted((self.brain.vault / section).glob("*.md")):
+                    try:
+                        content = md.read_text(encoding="utf-8").strip()
+                        if content and len(content) > 10:
+                            brain_parts.append(content)
+                            loaded_files.append(f"{section}/{md.name}")
+                    except Exception:
+                        pass
+            if brain_parts:
+                brain_ctx = (
+                    "Context from your brain vault (current state + memory). "
+                    "This is what you already know about Leo and the current situation:\n\n"
+                    + "\n\n---\n\n".join(brain_parts)
+                )
+                _mem_logger.info(
+                    "STARTUP  injecting brain context: %d notes, %d chars, files=%s",
+                    len(brain_parts), len(brain_ctx), loaded_files,
+                )
+                print(f"[ADA DEBUG] [BRAIN] Injecting brain context at startup ({len(brain_ctx)} chars, backend={backend})")
+                async with self._session_send_lock:
+                    await self.session.send(input=brain_ctx, end_of_turn=True)
+                self._startup_output_turns_to_skip += 1
+                self.clear_audio_queue()
+                injected = True
+
+        if not injected:
+            label = "RECONNECT" if is_reconnect else "MEMORY"
+            print(f"[ADA DEBUG] [{label}] Nenhum contexto para injetar (backend={backend}).")
 
     def flush_chat(self):
         """Forces the current chat buffer to be written to log."""
@@ -879,6 +912,106 @@ class AudioLoop:
         except Exception as e:
              print(f"[ADA DEBUG] [ERR] Failed to send fs result: {e}")
 
+    async def handle_read_brain(self, note: str):
+        print(f"[ADA DEBUG] [BRAIN] read_brain note='{note}'")
+        try:
+            result = self.brain.read_note(note)
+            if "error" in result:
+                msg = f"[read_brain FAILED] {result['error']}"
+                _mem_logger.warning("TOOL read_brain  note=%r -> %s", note, result["error"])
+            else:
+                links_info = ""
+                if result["links"]:
+                    resolved = [
+                        f"  {name} -> {path}" if path else f"  {name} -> (not found)"
+                        for name, path in result["links"].items()
+                    ]
+                    links_info = "\n[Linked notes]\n" + "\n".join(resolved)
+                msg = result["content"] + links_info
+                _mem_logger.info("TOOL read_brain  note=%r -> OK (%d chars sent to model)", note, len(msg))
+        except Exception as e:
+            msg = f"[read_brain FAILED] {e}"
+            _mem_logger.error("TOOL read_brain  note=%r -> EXCEPTION: %s", note, e)
+        print(f"[ADA DEBUG] [BRAIN] Result length: {len(msg)}")
+        try:
+            async with self._session_send_lock:
+                await self.session.send(input=f"System Notification: {msg}", end_of_turn=True)
+        except Exception as e:
+            print(f"[ADA DEBUG] [ERR] Failed to send brain result: {e}")
+
+    async def handle_write_brain(self, note: str, content: str, mode: str = "overwrite"):
+        print(f"[ADA DEBUG] [BRAIN] write_brain note='{note}' mode='{mode}' len={len(content)}")
+        try:
+            result = self.brain.write_note(note, content, mode)
+            if "error" in result:
+                msg = f"[write_brain FAILED] {result['error']}"
+                _mem_logger.warning("TOOL write_brain  note=%r mode=%s -> %s", note, mode, result["error"])
+            else:
+                action = "created" if result.get("created") else ("appended" if mode == "append" else "updated")
+                _mem_logger.info(
+                    "TOOL write_brain  note=%r mode=%s action=%s chars=%d",
+                    note,
+                    mode,
+                    action,
+                    len(content),
+                )
+                msg = _WRITE_BRAIN_TOOL_SUCCESS_ACK
+        except Exception as e:
+            msg = f"[write_brain FAILED] {e}"
+            _mem_logger.error("TOOL write_brain  note=%r mode=%s -> EXCEPTION: %s", note, mode, e)
+        print(f"[ADA DEBUG] [BRAIN] write_brain -> {msg[:80]}...")
+        try:
+            async with self._session_send_lock:
+                await self.session.send(input=f"System Notification: {msg}", end_of_turn=True)
+        except Exception as e:
+            print(f"[ADA DEBUG] [ERR] Failed to send brain result: {e}")
+
+    async def handle_search_brain(self, query: str, mode: str | None = None):
+        print(f"[ADA DEBUG] [BRAIN] search_brain query='{query}' mode={mode!r}")
+        try:
+            from orbital.services.brain_rag import search_brain_formatted
+
+            msg = search_brain_formatted(self.brain, query, mode)
+            if "No notes found" in msg or "No semantic matches" in msg:
+                _mem_logger.info("TOOL search_brain  query=%r mode=%r -> %s", query, mode, msg[:80])
+            else:
+                _mem_logger.info("TOOL search_brain  query=%r mode=%r -> ok len=%d", query, mode, len(msg))
+        except Exception as e:
+            msg = f"[search_brain FAILED] {e}"
+            _mem_logger.error("TOOL search_brain  query=%r -> EXCEPTION: %s", query, e)
+        print(f"[ADA DEBUG] [BRAIN] {msg[:200]}")
+        try:
+            async with self._session_send_lock:
+                await self.session.send(input=f"System Notification: {msg}", end_of_turn=True)
+        except Exception as e:
+            print(f"[ADA DEBUG] [ERR] Failed to send brain result: {e}")
+
+    async def handle_list_brain(self, section: str | None = None):
+        print(f"[ADA DEBUG] [BRAIN] list_brain section={section!r}")
+        try:
+            tree = self.brain.list_sections(section)
+            if not tree:
+                msg = f"No sections found{' matching ' + section if section else ''}."
+                _mem_logger.info("TOOL list_brain  section=%r -> empty", section)
+            else:
+                lines = []
+                for sec, notes in tree.items():
+                    ro = " (READ-ONLY)" if sec in ("00 - Core", "02 - Skills", "03 - Thinking", "08 - System") else ""
+                    lines.append(f"[{sec}]{ro}")
+                    for n in notes:
+                        lines.append(f"  - {n}")
+                msg = "Brain vault structure:\n" + "\n".join(lines)
+                _mem_logger.info("TOOL list_brain  section=%r -> %d sections listed", section, len(tree))
+        except Exception as e:
+            msg = f"[list_brain FAILED] {e}"
+            _mem_logger.error("TOOL list_brain  section=%r -> EXCEPTION: %s", section, e)
+        print(f"[ADA DEBUG] [BRAIN] {msg[:200]}")
+        try:
+            async with self._session_send_lock:
+                await self.session.send(input=f"System Notification: {msg}", end_of_turn=True)
+        except Exception as e:
+            print(f"[ADA DEBUG] [ERR] Failed to send brain result: {e}")
+
     async def handle_generate_image(
         self,
         prompt: str,
@@ -887,7 +1020,7 @@ class AudioLoop:
         negative_prompt: str = "",
     ):
         """
-        Gera a imagem via ComfyUI local usando `data/comfyui/workflow_api.json`
+        Gera a imagem via ComfyUI local usando `integrations/comfyui/workflow_api.json`
         (ou `COMFYUI_WORKFLOW_FILE`). Apenas ComfyUI.
         Retorno: (base64, mime_type, image_relpath|None).
         """
@@ -897,7 +1030,7 @@ class AudioLoop:
         if not os.path.isfile(workflow_path):
             raise FileNotFoundError(
                 f"Workflow do ComfyUI nao encontrado: '{workflow_path}'. "
-                f"Coloque `data/comfyui/workflow_api.json` ou defina `COMFYUI_WORKFLOW_FILE`."
+                f"Coloque `integrations/comfyui/workflow_api.json` ou defina `COMFYUI_WORKFLOW_FILE`."
             )
 
         try:
@@ -912,71 +1045,13 @@ class AudioLoop:
         except Exception as e:
             raise RuntimeError(f"Falha ao gerar imagem via ComfyUI: {e!r}") from e
 
-    def _format_webhook_tool_result(
-        self,
-        hook_id: str,
-        status: int,
-        text: str,
-        *,
-        integration_hint: str | None = None,
-    ) -> str:
-        """
-        Retorno explícito para o modelo: [SUCCESS] / [FAILED], evitando 'alucinar' que a integração obedeceu sem evidência no retorno.
-        """
-        snippet = (text or "").strip()[:1200]
-        # status 0 = erro antes do HTTP (ex.: hook_id desconhecido)
-        if status <= 0:
-            http_ok = False
-        else:
-            http_ok = 200 <= status < 300
-
-        n8n_ok: bool | None = None
-        if snippet:
-            try:
-                parsed = json.loads(snippet)
-                if isinstance(parsed, dict) and "ok" in parsed:
-                    raw_ok = parsed.get("ok")
-                    if isinstance(raw_ok, str):
-                        n8n_ok = raw_ok.strip().lower() in ("1", "true", "yes")
-                    else:
-                        n8n_ok = bool(raw_ok)
-            except json.JSONDecodeError:
-                pass
-
-        if not http_ok:
-            tag = "[FAILED]"
-        elif n8n_ok is False:
-            tag = "[FAILED]"
-        else:
-            tag = "[SUCCESS]"
-
-        if integration_hint == "spotify":
-            hint = (
-                "Spotify often needs Premium + app open + an active device with recent playback; "
-                "resume/play can silently fail if there is no active player."
-            )
-        elif integration_hint == "google_calendar":
-            hint = (
-                "Google Calendar via n8n needs the workflow active and OAuth credentials; "
-                "if it failed, check n8n execution logs."
-            )
-        else:
-            hint = ""
-
-        hint_part = f"{hint} " if hint else ""
-        return (
-            f"{tag} webhook={hook_id!r} http_status={status}. "
-            f"{hint_part}"
-            f"n8n_body_snippet={snippet!r}"
-        )
-
     async def handle_trigger_webhook(self, hook_id: str, payload=None):
         """POST agendado em config/webhooks.json (ex.: n8n)."""
         cfg = load_webhooks_config()
         extra = normalize_trigger_webhook_payload(payload, None)
         status, text = await fire_webhook_by_id(cfg, hook_id, extra)
         ih = "spotify" if hook_id == "athena-spotify" else None
-        return self._format_webhook_tool_result(hook_id, status, text, integration_hint=ih)
+        return format_webhook_tool_result(hook_id, status, text, integration_hint=ih)
 
     async def receive_audio(self):
         "Background task to reads from the websocket and write pcm chunks to the output queue"
@@ -1102,6 +1177,10 @@ class AudioLoop:
                                 "start_timer",
                                 "add_calendar_reminder",
                                 "remove_calendar_reminder",
+                                "read_brain",
+                                "write_brain",
+                                "search_brain",
+                                "list_brain",
                             ]:
                                 if fc.name == "start_timer":
                                     args_map = coerce_tool_args(fc.args)
@@ -1157,7 +1236,7 @@ class AudioLoop:
                                     args_map = coerce_tool_args(fc.args)
                                     title = str(args_map.get("title") or "").strip()
                                     iso = str(args_map.get("starts_at_iso") or "").strip()
-                                    ts, parse_err = _parse_reminder_starts_at(iso)
+                                    ts, parse_err = parse_reminder_starts_at(iso)
                                     if not title or ts is None:
                                         err = parse_err or "título ou data inválidos"
                                         function_responses.append(
@@ -1177,7 +1256,7 @@ class AudioLoop:
                                     ends_iso_norm: str | None = None
                                     if ends_raw:
                                         try:
-                                            ends_iso_norm = _normalize_reminder_iso(ends_raw)
+                                            ends_iso_norm = normalize_reminder_iso(ends_raw)
                                         except ValueError:
                                             function_responses.append(
                                                 types.FunctionResponse(
@@ -1194,7 +1273,7 @@ class AudioLoop:
                                             continue
                                     notes = str(args_map.get("notes") or "").strip()
                                     try:
-                                        starts_iso_norm = _normalize_reminder_iso(iso)
+                                        starts_iso_norm = normalize_reminder_iso(iso)
                                     except ValueError:
                                         starts_iso_norm = iso
 
@@ -1224,7 +1303,7 @@ class AudioLoop:
                                                 }
                                             ),
                                         )
-                                    wh_line = self._format_webhook_tool_result(
+                                    wh_line = format_webhook_tool_result(
                                         ATHENA_GOOGLE_CALENDAR_HOOK_ID,
                                         wh_status,
                                         wh_text,
@@ -1618,6 +1697,118 @@ class AudioLoop:
                                         )
                                     function_responses.append(function_response)
 
+                                elif fc.name == "read_brain":
+                                    args_map = coerce_tool_args(fc.args)
+                                    note = str(args_map.get("note", "")).strip()
+                                    print(f"[ADA DEBUG] [TOOL] Tool Call: 'read_brain' note='{note}'")
+                                    try:
+                                        res = self.brain.read_note(note)
+                                        if "error" in res:
+                                            result = f"[read_brain FAILED] {res['error']}"
+                                            _mem_logger.warning("TOOL read_brain  note=%r -> %s", note, res["error"])
+                                        else:
+                                            links_info = ""
+                                            if res["links"]:
+                                                resolved = [
+                                                    f"  {name} -> {path}" if path else f"  {name} -> (not found)"
+                                                    for name, path in res["links"].items()
+                                                ]
+                                                links_info = "\n[Linked notes]\n" + "\n".join(resolved)
+                                            result = res["content"] + links_info
+                                            _mem_logger.info("TOOL read_brain  note=%r -> OK (%d chars)", note, len(result))
+                                    except Exception as e:
+                                        result = f"[read_brain FAILED] {e}"
+                                        _mem_logger.error("TOOL read_brain  note=%r -> EXCEPTION: %s", note, e)
+                                    function_response = types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result}
+                                    )
+                                    function_responses.append(function_response)
+
+                                elif fc.name == "write_brain":
+                                    args_map = coerce_tool_args(fc.args)
+                                    note = str(args_map.get("note", "")).strip()
+                                    content = str(args_map.get("content", ""))
+                                    mode = str(args_map.get("mode", "overwrite")).strip()
+                                    if mode not in ("overwrite", "append"):
+                                        mode = "overwrite"
+                                    print(f"[ADA DEBUG] [TOOL] Tool Call: 'write_brain' note='{note}' mode='{mode}'")
+                                    try:
+                                        res = self.brain.write_note(note, content, mode)
+                                        if "error" in res:
+                                            result = f"[write_brain FAILED] {res['error']}"
+                                            _mem_logger.warning("TOOL write_brain  note=%r mode=%s -> %s", note, mode, res["error"])
+                                        else:
+                                            action = "created" if res.get("created") else ("appended" if mode == "append" else "updated")
+                                            _mem_logger.info(
+                                                "TOOL write_brain  note=%r mode=%s action=%s chars=%d",
+                                                note,
+                                                mode,
+                                                action,
+                                                len(content),
+                                            )
+                                            result = _WRITE_BRAIN_TOOL_SUCCESS_ACK
+                                    except Exception as e:
+                                        result = f"[write_brain FAILED] {e}"
+                                        _mem_logger.error("TOOL write_brain  note=%r mode=%s -> EXCEPTION: %s", note, mode, e)
+                                    function_response = types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result}
+                                    )
+                                    function_responses.append(function_response)
+
+                                elif fc.name == "search_brain":
+                                    args_map = coerce_tool_args(fc.args)
+                                    query = str(args_map.get("query", "")).strip()
+                                    mode = str(args_map.get("mode") or "").strip() or None
+                                    print(f"[ADA DEBUG] [TOOL] Tool Call: 'search_brain' query='{query}' mode={mode!r}")
+                                    if not query:
+                                        result = "query is required."
+                                    else:
+                                        try:
+                                            from orbital.services.brain_rag import search_brain_formatted
+
+                                            result = search_brain_formatted(
+                                                self.brain, query, mode
+                                            )
+                                            _mem_logger.info(
+                                                "TOOL search_brain  query=%r mode=%r chars=%d",
+                                                query,
+                                                mode,
+                                                len(result),
+                                            )
+                                        except Exception as e:
+                                            result = f"[search_brain FAILED] {e}"
+                                            _mem_logger.error("TOOL search_brain  query=%r -> EXCEPTION: %s", query, e)
+                                    function_response = types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result}
+                                    )
+                                    function_responses.append(function_response)
+
+                                elif fc.name == "list_brain":
+                                    args_map = coerce_tool_args(fc.args)
+                                    section = str(args_map.get("section", "")).strip() or None
+                                    print(f"[ADA DEBUG] [TOOL] Tool Call: 'list_brain' section={section!r}")
+                                    try:
+                                        tree = self.brain.list_sections(section)
+                                        if not tree:
+                                            result = f"No sections found{' matching ' + section if section else ''}."
+                                            _mem_logger.info("TOOL list_brain  section=%r -> empty", section)
+                                        else:
+                                            lines = []
+                                            for sec, notes in tree.items():
+                                                ro = " (READ-ONLY)" if sec in ("00 - Core", "02 - Skills", "03 - Thinking", "08 - System") else ""
+                                                lines.append(f"[{sec}]{ro}")
+                                                for n in notes:
+                                                    lines.append(f"  - {n}")
+                                            result = "Brain vault structure:\n" + "\n".join(lines)
+                                            _mem_logger.info("TOOL list_brain  section=%r -> %d sections listed", section, len(tree))
+                                    except Exception as e:
+                                        result = f"[list_brain FAILED] {e}"
+                                        _mem_logger.error("TOOL list_brain  section=%r -> EXCEPTION: %s", section, e)
+                                    function_response = types.FunctionResponse(
+                                        id=fc.id, name=fc.name, response={"result": result}
+                                    )
+                                    function_responses.append(function_response)
+
                         if function_responses:
                             async with self._session_send_lock:
                                 await self.session.send_tool_response(function_responses=function_responses)
@@ -1716,7 +1907,7 @@ class AudioLoop:
                     # Não marcar como reconnect: ainda não houve sessão Live com histórico injetado.
                     continue
                 async with (
-                    gemini_client.aio.live.connect(model=MODEL, config=config) as session,
+                    gemini_client.aio.live.connect(model=MODEL, config=build_live_config()) as session,
                     asyncio.TaskGroup() as tg,
                 ):
                     self.session = session
@@ -1732,60 +1923,14 @@ class AudioLoop:
                             async with self._session_send_lock:
                                 await self.session.send(input=start_message, end_of_turn=True)
 
-                        history = self.project_manager.get_live_startup_history(
-                            limit=_chat_startup_history_limit()
-                        )
-                        if history:
-                            context_msg = (
-                                "Persisted project chat transcript. Factual record of prior turns with Leo in this project. "
-                                "Use it when he asks about the past or for consistency; do not invent lines outside this log.\n\n"
-                            )
-                            for entry in history:
-                                sender = entry.get('sender', 'Unknown')
-                                text = entry.get('text', '')
-                                context_msg += f"[{sender}]: {text}\n"
-
-                            print(f"[ADA DEBUG] [MEMORY] Injecting startup chat history ({len(history)} messages)")
-                            async with self._session_send_lock:
-                                await self.session.send(input=context_msg, end_of_turn=True)
-                            self._startup_output_turns_to_skip = 1
-                            self.clear_audio_queue()
-                        else:
-                            print(
-                                "[ADA DEBUG] [MEMORY] Nenhum histórico persistido para injetar "
-                                f"(projeto={self.project_manager.current_project!r}). "
-                                "Confirme mensagens em Supabase ou chat_history.jsonl."
-                            )
+                        await self._inject_startup_context(is_reconnect=False)
 
                         if self.on_project_update and self.project_manager:
                             self.on_project_update(self.project_manager.current_project)
 
                     else:
                         print(f"[ADA DEBUG] [RECONNECT] Connection restored.")
-                        print(f"[ADA DEBUG] [RECONNECT] Fetching recent chat history to restore context...")
-                        history = self.project_manager.get_live_startup_history(
-                            limit=_chat_startup_history_limit()
-                        )
-                        if history:
-                            context_msg = (
-                                "Connection was lost and re-established. Recent persisted transcript below.\n\n"
-                            )
-                            for entry in history:
-                                sender = entry.get('sender', 'Unknown')
-                                text = entry.get('text', '')
-                                context_msg += f"[{sender}]: {text}\n"
-
-                            context_msg += (
-                                "\nWhen Leo asks about earlier topics, use the transcript above."
-                            )
-
-                            print(f"[ADA DEBUG] [RECONNECT] Sending restoration context to model...")
-                            async with self._session_send_lock:
-                                await self.session.send(input=context_msg, end_of_turn=True)
-                            self._startup_output_turns_to_skip = 1
-                            self.clear_audio_queue()
-                        else:
-                            print("[ADA DEBUG] [RECONNECT] Sem histórico para reinjetar.")
+                        await self._inject_startup_context(is_reconnect=True)
 
                     self._had_successful_live_connect = True
 
@@ -1823,7 +1968,7 @@ class AudioLoop:
             except BaseExceptionGroup as eg:
                 # TaskGroup propaga ExceptionGroup, que NÃO herda de Exception — sem este bloco o loop
                 # não reconecta e a task do servidor morre após erro no WebSocket Live (ex.: API 1011).
-                leaves = list(_leaf_exceptions(eg))
+                leaves = list(iter_leaf_exceptions(eg))
                 detail = "; ".join(str(x) for x in leaves[:4])
                 if len(leaves) > 4:
                     detail += "…"

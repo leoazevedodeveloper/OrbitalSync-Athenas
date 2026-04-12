@@ -1,12 +1,10 @@
-"""Monta FastAPI + Socket.IO, sinais e rota /status (carregado por `server.py`)."""
-import mimetypes
+"""Monta FastAPI + Socket.IO, sinais HTTP (carregado por `server.py`)."""
 import os
 import signal
 import sys
 
 import socketio
-from fastapi import FastAPI, HTTPException, Query
-from fastapi.responses import FileResponse
+from fastapi import FastAPI
 
 from orbital.services.config.local_credentials import reload_env_from_dotenv_and_file
 
@@ -14,10 +12,10 @@ from orbital.services.config.local_credentials import reload_env_from_dotenv_and
 reload_env_from_dotenv_and_file()
 
 from orbital.settings import SETTINGS, apply_semantic_memory_defaults
-from orbital.services.integrations.comfyui_client import safe_comfyui_imagens_file
 from orbital.services.supabase.remote_config import try_apply_supabase_config
 
 from . import state as st
+from .http_routes import register_http_routes
 from .socket_handlers import register_socket_handlers
 
 try:
@@ -34,6 +32,7 @@ sio = socketio.AsyncServer(
 app = FastAPI()
 app_socketio = socketio.ASGIApp(sio, app)
 
+register_http_routes(app)
 register_socket_handlers(sio)
 
 
@@ -75,16 +74,3 @@ async def startup_event():
         pass
 
 
-@app.get("/status")
-async def status():
-    return {"status": "running", "service": "A.D.A Backend"}
-
-
-@app.get("/api/comfyui-image")
-async def comfyui_saved_image(relpath: str = Query(..., min_length=1, max_length=512)):
-    """Serve ficheiros só dentro de data/comfyui/imagens (histórico do chat)."""
-    resolved = safe_comfyui_imagens_file(relpath)
-    if resolved is None:
-        raise HTTPException(status_code=404, detail="Not found")
-    media_type, _ = mimetypes.guess_type(str(resolved))
-    return FileResponse(resolved, media_type=media_type or "application/octet-stream")

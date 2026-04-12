@@ -4,17 +4,17 @@
     "type": "split",
     "children": [
       {
-        "id": "50ba58c650aad1f4",
+        "id": "aea9226d76d38cf9",
         "type": "tabs",
         "children": [
           {
-            "id": "30537e1279dc3f19",
+            "id": "0e237049378e9e25",
             "type": "leaf",
             "state": {
-              "type": "empty",
+              "type": "graph",
               "state": {},
-              "icon": "lucide-file",
-              "title": "Nova aba"
+              "icon": "lucide-git-fork",
+              "title": "Visualização em gráfico"
             }
           }
         ]
@@ -74,7 +74,7 @@
       }
     ],
     "direction": "horizontal",
-    "width": 300
+    "width": 200
   },
   "right": {
     "id": "e2c02645fbabc203",
@@ -176,12 +176,45 @@
       "bases:Criar nova base": false
     }
   },
-  "active": "30537e1279dc3f19",
+  "active": "0e237049378e9e25",
   "lastOpenFiles": [
-    "Sem título 1.md",
-    "Sem título.md",
-    "Bem-vindo.md",
+    "04 - Tasks/Tarefas_ativas.md",
+    "02 - Skills/Geracao_de_imagem.md",
+    "04 - Tasks/Tarefas_concluidas.md",
+    "04 - Tasks/Fila_de_tarefas.md",
+    "06 - State/Objetivo_atual.md",
+    "06 - State/Modo_atual.md",
+    "06 - State/Intencao_do_usuario.md",
+    "06 - State/Contexto_atual.md",
+    "07 - Logs/Conversas.md",
+    "07 - Logs/Reflexoes.md",
+    "01 - Memória/Usuário.md",
+    "01 - Memória/Memoria_longo_prazo.md",
+    "01 - Memória/Memoria_curto_prazo.md",
+    "01 - Memória/Aprendizados.md",
+    "08 - System/Loop_de_execucao.md",
+    "08 - System/Guia_secoes_RW.md",
+    "08 - System/Brain_vault.md",
+    "05 - Integrations/n8n.md",
+    "03 - Thinking/Planejamento.md",
     "Sem título.canvas",
+    "02 - Skills/Skills.md",
+    "03 - Thinking/Resolução_de_problemas.md",
+    "03 - Thinking/Quebra_de_tarefas.md",
+    "03 - Thinking/Priorizacao.md",
+    "03 - Thinking/Tomada_de_decisão.md",
+    "02 - Skills/Calendario.md",
+    "02 - Skills/Automação.md",
+    "08 - System",
+    "07 - Logs",
+    "06 - State",
+    "05 - Integrations",
+    "04 - Tasks",
+    "03 - Thinking",
+    "02 - Skills",
+    "01 - Memória",
+    "00 - Core",
+    "Cérebro.base",
     "Sem título 1.canvas"
   ]
 }

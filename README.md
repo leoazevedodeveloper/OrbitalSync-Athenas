@@ -9,7 +9,7 @@ A.D.A V2 is a desktop multimodal assistant built with Electron (React) + FastAPI
 - Optional face authentication
 - Project-based chat persistence
 - File/project tools: read/write files, create/switch/list projects
-- Image generation: **ComfyUI local** (com `data/comfyui/workflow_api.json`) — ver `data/comfyui/README.md`
+- Image generation: **ComfyUI local** (`integrations/comfyui/workflow_api.json`) — ver `integrations/comfyui/README.md`
 
 ## Removed Modules
 
@@ -61,7 +61,12 @@ Use these commands in chat:
 - `backend/orbital/assistant/`: ATHENAS — Gemini Live, `AudioLoop`, devices
 - `backend/orbital/services/`: auth facial, launch apps, webhooks, ComfyUI, projetos, tools
 - `backend/athenas.py`: CLI opcional do loop (`--mode camera|screen|none`)
-- `data/projects/`: per-project chat history and artifacts
-- `data/comfyui/`: workflow API JSON para imagens locais (opcional)
-- `scripts/`: utility and diagnostics scripts
+- `config/`: ficheiros de configuração versionados (ex.: `webhooks.json`)
+- `data/`: dados da app no disco (ver `data/README.md`)
+- `dev/scripts/`: scripts de diagnóstico e testes manuais (não usados pelo runtime)
+- `dev/ambiente/`: Cloudflare tunnel (`config.yml`), `cloudflared.exe` (opcional), notas Docker
+- `integrations/n8n/`: índice + `spotify/` e `google-calendar/`
+- `integrations/comfyui/`: workflow API ComfyUI, README e pasta `imagens/` (gerada)
 - `src/`: React UI
+- `electron/`: shell Electron (inclui caminho para `dev/ambiente`)
+- `supabase/`: SQL e documentação do backend remoto

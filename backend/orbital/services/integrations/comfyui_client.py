@@ -1,11 +1,11 @@
 """
 Cliente HTTP mínimo para ComfyUI (API local).
 
-Requer um workflow exportado em formato API (JSON) — ver data/comfyui/README.md.
+Requer um workflow exportado em formato API (JSON) — ver integrations/comfyui/README.md.
 
 Variáveis de ambiente:
   COMFYUI_BASE_URL   (padrão: http://127.0.0.1:2000)
-  COMFYUI_WORKFLOW_FILE (opcional; senão usa data/comfyui/workflow_api.json na raiz do projeto)
+  COMFYUI_WORKFLOW_FILE (opcional; senão usa integrations/comfyui/workflow_api.json)
 """
 
 from __future__ import annotations
@@ -24,7 +24,8 @@ from typing import Any, Dict, Optional, Tuple
 
 from orbital.paths import REPO_ROOT
 
-DEFAULT_COMFYUI_WORKFLOW_REL = "data/comfyui/workflow_api.json"
+DEFAULT_COMFYUI_WORKFLOW_REL = "integrations/comfyui/workflow_api.json"
+_LEGACY_COMFYUI_WORKFLOW_REL = "data/comfyui/workflow_api.json"
 
 
 def resolved_comfyui_workflow_path() -> Path:
@@ -32,13 +33,22 @@ def resolved_comfyui_workflow_path() -> Path:
     Caminho absoluto do workflow API (COMFYUI_WORKFLOW_FILE ou padrão na raiz do repo).
     Caminhos relativos são relativos a REPO_ROOT, não ao cwd do processo.
     """
+    primary = (REPO_ROOT / DEFAULT_COMFYUI_WORKFLOW_REL).resolve()
     raw = (os.getenv("COMFYUI_WORKFLOW_FILE") or "").strip()
     if not raw:
-        return (REPO_ROOT / DEFAULT_COMFYUI_WORKFLOW_REL).resolve()
+        if primary.is_file():
+            return primary
+        legacy_wf = (REPO_ROOT / _LEGACY_COMFYUI_WORKFLOW_REL).resolve()
+        return legacy_wf if legacy_wf.is_file() else primary
+
     p = Path(raw)
-    if p.is_absolute():
-        return p.resolve()
-    return (REPO_ROOT / p).resolve()
+    out = p.resolve() if p.is_absolute() else (REPO_ROOT / p).resolve()
+    if out.is_file():
+        return out
+    norm = raw.replace("\\", "/").strip()
+    if primary.is_file() and norm.rstrip("/") == _LEGACY_COMFYUI_WORKFLOW_REL:
+        return primary
+    return out
 
 
 def comfyui_workflow_path_for_settings_meta() -> str:
@@ -228,6 +238,11 @@ def _mime_to_file_ext(mime: str) -> str:
 
 
 def comfyui_imagens_dir() -> Path:
+    return REPO_ROOT / "integrations" / "comfyui" / "imagens"
+
+
+def _legacy_comfyui_imagens_dir() -> Path:
+    """Histórico antigo gravava `data/comfyui/imagens/` — mantido só para resolver ficheiros já referenciados."""
     return REPO_ROOT / "data" / "comfyui" / "imagens"
 
 
@@ -241,28 +256,48 @@ def repo_relative_posix(path: Path) -> Optional[str]:
 
 def safe_comfyui_imagens_file(relpath: str) -> Optional[Path]:
     """
-    Resolve `relpath` (ex.: data/comfyui/imagens/foo.png) só se o ficheiro estiver
-    dentro de data/comfyui/imagens (sem path traversal).
+    Resolve `relpath` (ex.: integrations/comfyui/imagens/foo.png) dentro das pastas
+    permitidas (sem path traversal). Aceita ainda `data/comfyui/imagens/` legado no JSON
+    e procura o mesmo ficheiro em integrations/comfyui/imagens/ se tiver sido movido.
     """
     if not relpath or not isinstance(relpath, str):
         return None
     norm = relpath.replace("\\", "/").strip().lstrip("/")
     if not norm or ".." in norm.split("/"):
         return None
-    root = comfyui_imagens_dir().resolve()
-    candidate = (REPO_ROOT / norm).resolve()
-    try:
-        candidate.relative_to(root)
-    except ValueError:
-        return None
-    if candidate.is_file():
-        return candidate
+
+    def _try_under(root: Path, rel_norm: str) -> Optional[Path]:
+        candidate = (REPO_ROOT / rel_norm).resolve()
+        try:
+            candidate.relative_to(root.resolve())
+        except ValueError:
+            return None
+        return candidate if candidate.is_file() else None
+
+    primary = comfyui_imagens_dir().resolve()
+    legacy = _legacy_comfyui_imagens_dir().resolve()
+
+    for hit in (_try_under(primary, norm), _try_under(legacy, norm)):
+        if hit is not None:
+            return hit
+
+    old_prefix = "data/comfyui/imagens/"
+    if norm.startswith(old_prefix):
+        tail = norm[len(old_prefix) :].lstrip("/")
+        if tail and ".." not in tail.split("/"):
+            alt = (primary / tail).resolve()
+            try:
+                alt.relative_to(primary)
+            except ValueError:
+                return None
+            if alt.is_file():
+                return alt
     return None
 
 
 def save_comfyui_image_to_data_dir(raw: bytes, mime_type: str) -> Optional[Path]:
     """
-    Grava cópia da imagem gerada em `data/comfyui/imagens/` (raiz do repositório).
+    Grava cópia da imagem gerada em `integrations/comfyui/imagens/`.
     Falhas de I/O não interrompem a geração; retorna None nesse caso.
     """
     try:
@@ -275,13 +310,13 @@ def save_comfyui_image_to_data_dir(raw: bytes, mime_type: str) -> Optional[Path]
         path.write_bytes(raw)
         return path
     except OSError as e:
-        print(f"[ComfyUI] Não foi possível salvar em data/comfyui/imagens: {e}")
+        print(f"[ComfyUI] Não foi possível salvar em integrations/comfyui/imagens: {e}")
         return None
 
 
 def save_chat_upload_image_to_data_dir(raw: bytes, mime_type: str) -> Optional[Path]:
     """
-    Grava anexo enviado pelo utilizador no chat em `data/comfyui/imagens/`
+    Grava anexo enviado pelo utilizador no chat em `integrations/comfyui/imagens/`
     (mesmo destino que `/api/comfyui-image`, para o histórico mostrar a miniatura).
     """
     try:

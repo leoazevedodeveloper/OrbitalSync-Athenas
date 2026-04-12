@@ -47,7 +47,7 @@ let pythonProcess;
 let cloudflaredProcess;
 let ollamaProcess;
 
-const AMBIENTE_DIR = path.join(__dirname, '../ambiente');
+const AMBIENTE_DIR = path.join(__dirname, '../dev/ambiente');
 
 // Logs do Electron/main para evitar travar o DevTools com spam (cloudflared/python).
 // Tudo vai para 1 arquivo só (com rotação).
@@ -111,7 +111,7 @@ function createRotatingFileWriter(fileName, { maxBytes = 10 * 1024 * 1024, maxFi
 const writeOrbitalLog = createRotatingFileWriter('orbitalsync.log');
 
 /**
- * Cloudflare Tunnel (n8n, etc.): cloudflared.exe em ambiente/ ou CLOUDFLARED_EXE.
+ * Cloudflare Tunnel (n8n, etc.): cloudflared.exe em dev/ambiente/ ou CLOUDFLARED_EXE.
  * Desligar: ORBITAL_SKIP_CLOUDFLARED=1
  * Túnel: CLOUDFLARED_TUNNEL=n8n (default)
  */
@@ -148,7 +148,7 @@ function startCloudflaredTunnel() {
     if (process.platform === 'win32' && !fs.existsSync(exe)) {
         writeOrbitalLog(
             'warn',
-            `[Cloudflared] Não encontrado: ${exe}. Coloque cloudflared.exe em ambiente/ ou defina CLOUDFLARED_EXE.`
+            `[Cloudflared] Não encontrado: ${exe}. Coloque cloudflared.exe em dev/ambiente/ ou defina CLOUDFLARED_EXE.`
         );
         return;
     }

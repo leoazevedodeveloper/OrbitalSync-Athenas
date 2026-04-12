@@ -334,6 +334,10 @@ def register_settings_handlers(sio, emit_runtime_log, emit_full_settings):
                 pass
         if "memory_salience_debug" in data:
             SETTINGS["memory_salience_debug"] = bool(data["memory_salience_debug"])
+        if "memory_backend" in data:
+            val = str(data["memory_backend"]).strip().lower()
+            if val in ("supabase", "brain", "both"):
+                SETTINGS["memory_backend"] = val
 
         save_settings()
         await emit_full_settings()

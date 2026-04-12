@@ -24,5 +24,4 @@ if __name__ == "__main__":
         port=8000,
         reload=False,
         loop="asyncio",
-        reload_excludes=["temp_cad_gen.py", "output.stl", "*.stl"],
     )

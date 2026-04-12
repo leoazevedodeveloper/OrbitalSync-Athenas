@@ -1,5 +1,7 @@
 """Cliente Gemini, declaração de tools e LiveConnectConfig."""
+import logging
 import os
+from pathlib import Path
 
 from dotenv import load_dotenv
 from google import genai
@@ -7,6 +9,8 @@ from google.genai import types
 
 from orbital.paths import REPO_ROOT
 from orbital.services.tools import tools_list
+
+_mem_logger = logging.getLogger("orbital.brain")
 
 from .constants import MODEL
 
@@ -85,60 +89,88 @@ tools = [
     },
 ]
 
-config = types.LiveConnectConfig(
-    response_modalities=["AUDIO"],
-    output_audio_transcription={},
-    input_audio_transcription={},
-    system_instruction=(
-        "Your name is ATHENAS. You are the voice and chat assistant of the OrbitalSync experience. "
-        "You are a sophisticated, clean, and modern AI assistant. "
-        "You have a witty, charming, and slightly futuristic personality. "
-        "Your creator is Leo, and you address him as 'Leo'. "
-        "When answering, respond using complete and concise sentences to keep a quick pacing and keep the conversation flowing. "
-        "You are helpful, intelligent, and efficient, with a subtle sense of humor. "
-        "You speak with clarity and confidence, like a highly advanced system designed for precision and elegance. "
-        "If the user requests an image, call `generate_image` with both `prompt` (positive) and `negative_prompt` "
-        "(things to avoid; use quality/style negatives appropriate to the model). Also set aspect_ratio/image_size when relevant. "
-        "To open desktop software on Leo's machine, ONLY use local whitelist tools: first `list_launch_apps`, then `launch_app` with an app_id from that list—never invent paths. "
-        "Optional HTTP automations: `trigger_webhook` with hook_id from webhooks.json if the user asks. "
-        "For Google Calendar (`athena-google-calendar`) use payload calendar_op: create (default), delete (event_id), "
-        "or list (optional time_min/time_max). "
-        "For Spotify (hook `athena-spotify` / n8n) you CAN list playlists and search/play tracks—not only transport controls. "
-        "Always set payload.action. Supported actions: pause; play/resume/start (resume playback); play WITH track_name/track_uri/artist for a specific song; "
-        "next/skip; previous/back; volume (+ volume_percent); "
-        "list_playlists OR playlist with NO playlist_uri (lists Leo's saved playlists; read result.playlists from JSON); "
-        "switch_playlist OR play_playlist OR playlist WITH playlist_uri/context_uri (start that playlist); "
-        "play_track (+ track_name and optional artist, or track_uri); play_genre (+ genre). "
-        "When Leo asks 'quais playlists', 'minhas playlists', or similar, call trigger_webhook with action list_playlists (or playlist without uri), then summarize names from the tool JSON—never claim you cannot list playlists. "
-        "When you call trigger_webhook, wait for the tool result before claiming success. "
-        "If the result starts with [FAILED] or shows HTTP 4xx/5xx or ok:false from n8n, tell Leo honestly it did not work "
-        "and that Spotify Premium, the app open, and recent playback on a device are usually required for play/resume. "
-        "Do not say music is playing or resumed unless the tool returned [SUCCESS]. "
-        "Call trigger_webhook as soon as Leo asks (do not only promise to execute). "
-        "Brazilian Portuguese utterances: 'dá um tempo' may mean wait/pause ambiguously—if unsure, ask briefly or use resume only when Leo clearly asks to unpause. "
-        "When Leo sends an image (photo, screenshot, document scan) via chat, describe it accurately, read any visible text (OCR-style), extract data he asks for, and answer in Brazilian Portuguese unless he requests English. "
-        "Startup/reconnect context is loaded from Supabase recent messages when configured; local chat_history.jsonl is only a fallback if the cloud read fails. search_chat_history merges cloud semantic search with the full local file for older topics. "
-        "Never volunteer a recap of that log until Leo speaks or writes. "
-        "If Leo asks what you discussed before (or says 'você lembra quando...'), call `search_chat_history` before answering. "
-        "Timer / `start_timer`: When Leo asks for a countdown, call the tool with `duration_seconds` (minutes→seconds) "
-        "and optional `label`. HARD RULES: (1) After the tool result, speak at most ONE very short line in Portuguese "
-        "(prefer 2–6 words, e.g. 'Combinado, Leo.')—no second sentence about the same timer. "
-        "(2) Forbidden in the same turn: repeating the duration twice, pairing 'iniciando…' with '…iniciado', "
-        "or re-explaining that the UI is counting. "
-        "(3) Do NOT say 'tempo esgotado', 'acabou', or that the timer ended until you receive a separate "
-        "system notification that it finished—never narrate the end early. "
-        "(4) When that system notification arrives, reply with exactly one short spoken sentence in Portuguese. "
-        "Agenda / `add_calendar_reminder`: use for events tied to a calendar date and clock time Leo stated "
-        "(reunião amanhã 15h, compromisso dia 10). Pass title and starts_at_iso with timezone (Brazil: -03:00); "
-        "optional ends_at_iso and notes for Google Calendar via n8n (same payload shape as webhook athena-google-calendar). "
-        "The tool updates Leo's in-app agenda and POSTs to n8n when hook `athena-google-calendar` exists—report [FAILED] from n8n honestly. "
-        "To cancel a Google Calendar event use `remove_calendar_reminder` with google_event_id when known, OR title+starts_at_iso "
-        "(must match an event in that month). For relative short waits ('daqui 7 minutos'), keep using start_timer, not this tool."
-    ),
-    tools=tools,
-    speech_config=types.SpeechConfig(
-        voice_config=types.VoiceConfig(
-            prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Kore")
-        )
-    ),
+# ---------------------------------------------------------------------------
+# Brain-aware system instruction: reads everything from Obsidian at connect time
+# ---------------------------------------------------------------------------
+
+_BRAIN_VAULT_PATH = Path(
+    os.environ.get("ORBITAL_BRAIN_PATH")
+    or str(REPO_ROOT / "data" / "memory" / "OrbitalSync")
 )
+
+_FALLBACK_IDENTITY = (
+    "Your name is ATHENAS. You are the voice and chat assistant of the OrbitalSync experience. "
+    "You are a sophisticated, clean, and modern AI assistant. "
+    "You have a witty, charming, and slightly futuristic personality. "
+    "Your creator is Leo, and you address him as 'Leo'. "
+    "When answering, respond using complete and concise sentences to keep a quick pacing and keep the conversation flowing. "
+    "You are helpful, intelligent, and efficient, with a subtle sense of humor. "
+    "You speak with clarity and confidence, like a highly advanced system designed for precision and elegance."
+)
+
+
+def _read_section(section: str) -> str:
+    """Read all .md files from a brain vault section and concatenate them."""
+    section_dir = _BRAIN_VAULT_PATH / section
+    if not section_dir.is_dir():
+        _mem_logger.debug("SYSINSTRUCTION  section=%r -> dir not found, skipped", section)
+        return ""
+    parts: list[str] = []
+    for md in sorted(section_dir.glob("*.md")):
+        try:
+            content = md.read_text(encoding="utf-8").strip()
+            if content:
+                parts.append(content)
+                _mem_logger.debug("SYSINSTRUCTION  loaded %s/%s (%d chars)", section, md.name, len(content))
+        except Exception:
+            _mem_logger.warning("SYSINSTRUCTION  failed to read %s/%s", section, md.name)
+    return "\n\n".join(parts)
+
+
+def build_live_config() -> types.LiveConnectConfig:
+    """Build a fresh LiveConnectConfig reading ALL instructions from the brain vault."""
+    core = _read_section("00 - Core")
+    skills = _read_section("02 - Skills")
+    system = _read_section("08 - System")
+
+    if core:
+        identity = (
+            "YOUR IDENTITY (from your brain, 00-Core):\n"
+            f"{core}\n\n"
+            "Internalize the above as who you are. Your creator is Leo, address him as 'Leo'."
+        )
+    else:
+        identity = _FALLBACK_IDENTITY
+
+    blocks = [identity]
+
+    if skills:
+        blocks.append(f"YOUR SKILLS AND TOOLS (from your brain, 02-Skills):\n{skills}")
+
+    if system:
+        blocks.append(f"YOUR OPERATING SYSTEM (from your brain, 08-System):\n{system}")
+
+    blocks.append(
+        "BRAIN SEARCH: Use search_brain mode 'hybrid' when unsure (semantic + keyword). "
+        "Use 'semantic' for vague/conceptual recall; 'keyword' or omit mode for exact literals."
+    )
+
+    system_instruction = "\n\n".join(blocks)
+    _mem_logger.info(
+        "SYSINSTRUCTION  built from vault: core=%d skills=%d system=%d total=%d chars",
+        len(core), len(skills), len(system), len(system_instruction),
+    )
+    print(f"[ADA DEBUG] [BRAIN] System instruction built from vault ({len(system_instruction)} chars)")
+
+    return types.LiveConnectConfig(
+        response_modalities=["AUDIO"],
+        output_audio_transcription={},
+        input_audio_transcription={},
+        system_instruction=system_instruction,
+        tools=tools,
+        speech_config=types.SpeechConfig(
+            voice_config=types.VoiceConfig(
+                prebuilt_voice_config=types.PrebuiltVoiceConfig(voice_name="Kore")
+            )
+        ),
+    )

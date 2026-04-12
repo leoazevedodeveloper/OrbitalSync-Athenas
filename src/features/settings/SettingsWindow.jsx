@@ -1684,7 +1684,7 @@ function IntegrationsHubSection({
                                                         type="text"
                                                         value={comfyWorkflow}
                                                         onChange={(e) => setComfyWorkflow(e.target.value)}
-                                                        placeholder="Opcional — vazio grava data/comfyui/workflow_api.json"
+                                                        placeholder="Opcional — vazio grava integrations/comfyui/workflow_api.json"
                                                         className={fieldClass}
                                                     />
                                                 </div>
