@@ -25,7 +25,6 @@ import BootSequence from './features/orbital-ui/BootSequence';
 import IntegrationHealthDock from './features/orbital-ui/IntegrationHealthDock';
 import AssistantTimerDock from './features/orbital-ui/AssistantTimerDock';
 import AgendaCalendarPanel from './features/orbital-ui/AgendaCalendarPanel';
-import FinancePanel from './features/finance/FinancePanel';
 
 const AGENDA_STORAGE_KEY = 'orbital_agenda_reminders_v1';
 const AGENDA_MAX_ITEMS = 200;
@@ -185,27 +184,6 @@ function App() {
     const [googleAgendaEvents, setGoogleAgendaEvents] = useState([]);
     const [googleAgendaLoading, setGoogleAgendaLoading] = useState(false);
     const [googleAgendaError, setGoogleAgendaError] = useState('');
-    const [financePanelOpen, setFinancePanelOpen] = useState(false);
-    const [financeLoading, setFinanceLoading] = useState(false);
-    const [financeError, setFinanceError] = useState('');
-    const [financePeriod, setFinancePeriod] = useState(() => {
-        const d = new Date();
-        return { type: 'month', year: d.getFullYear(), month: d.getMonth() + 1 };
-    });
-    const financeMonthAnchorRef = useRef({
-        year: new Date().getFullYear(),
-        month: new Date().getMonth() + 1,
-    });
-    const [financeSnapshot, setFinanceSnapshot] = useState({
-        source: 'pierre',
-        accounts: [],
-        bank_accounts: [],
-        credit_cards: [],
-        transactions: [],
-        summary: {},
-        synced_at_ms: 0,
-        view: null,
-    });
 
     const isImageGenerationPending = confirmationRequest?.tool === 'generate_image';
     const isImageGenerationActive = isImageGenerating || isImageGenerationPending;
@@ -233,7 +211,6 @@ function App() {
         supabase: { tier: 'pending' },
         comfyui: { tier: 'pending' },
         webhooks: { tier: 'pending' },
-        ollama: { tier: 'pending' },
     });
     const showSettingsRef = useRef(false);
     useEffect(() => {
@@ -887,45 +864,6 @@ function App() {
             setGoogleAgendaError('');
         });
 
-        socket.on('finance_manual_update_result', (payload) => {
-            console.log('[FINANCE][UI] finance_manual_update_result', {
-                message: payload?.message,
-                timestamp: payload?.timestamp,
-                details: payload?.details,
-            });
-        });
-
-        socket.on('finance_snapshot', (payload) => {
-            console.log('[FINANCE][UI] finance_snapshot received', {
-                accounts: Array.isArray(payload?.accounts) ? payload.accounts.length : 0,
-                transactions: Array.isArray(payload?.transactions) ? payload.transactions.length : 0,
-            });
-            const accounts = Array.isArray(payload?.accounts) ? payload.accounts : [];
-            const bank_accounts = Array.isArray(payload?.bank_accounts) ? payload.bank_accounts : [];
-            const credit_cards = Array.isArray(payload?.credit_cards) ? payload.credit_cards : [];
-            const transactions = Array.isArray(payload?.transactions) ? payload.transactions : [];
-            const summary = payload?.summary && typeof payload.summary === 'object' ? payload.summary : {};
-            setFinanceSnapshot({
-                source: payload?.source || 'pierre',
-                accounts,
-                bank_accounts,
-                credit_cards,
-                transactions,
-                summary,
-                synced_at_ms: Number(payload?.synced_at_ms) || Date.now(),
-                view: payload?.view && typeof payload.view === 'object' ? payload.view : null,
-            });
-            setFinanceLoading(false);
-            setFinanceError('');
-        });
-
-        socket.on('finance_error', (payload) => {
-            const msg = typeof payload?.msg === 'string' ? payload.msg : 'Falha no módulo financeiro.';
-            console.error('[FINANCE][UI] finance_error', msg);
-            setFinanceLoading(false);
-            setFinanceError(msg);
-        });
-
         socket.on('assistant_timer', (payload) => {
             const ev = payload?.event;
             if (ev === 'started') {
@@ -1181,9 +1119,6 @@ function App() {
             socket.off('assistant_timer');
             socket.off('assistant_calendar');
             socket.off('agenda_google_sync_result');
-            socket.off('finance_manual_update_result');
-        socket.off('finance_snapshot');
-        socket.off('finance_error');
             socket.off('project_update');
             socket.off('chat_history');
             socket.off('image_generation_started');
@@ -1258,7 +1193,6 @@ function App() {
                     supabase: { tier: 'down' },
                     comfyui: { tier: 'down' },
                     webhooks: { tier: 'down' },
-                    ollama: { tier: 'down' },
                 });
             } else {
                 const r = payload.results || {};
@@ -1266,7 +1200,6 @@ function App() {
                     supabase: { tier: r.supabase?.tier || 'down' },
                     comfyui: { tier: r.comfyui?.tier || 'down' },
                     webhooks: { tier: r.webhooks?.tier || 'down' },
-                    ollama: { tier: r.ollama?.tier || 'down' },
                 });
             }
             setBootIntegrationsReady(true);
@@ -1482,221 +1415,221 @@ function App() {
                 const results = handLandmarkerRef.current.detectForVideo(videoRef.current, startTimeMs);
 
                 if (results.landmarks && results.landmarks.length > 0) {
-                const landmarks = results.landmarks[0];
+                    const landmarks = results.landmarks[0];
 
-                // Index Finger Tip (8)
-                const indexTip = landmarks[8];
-                // Thumb Tip (4)
-                const thumbTip = landmarks[4];
+                    // Index Finger Tip (8)
+                    const indexTip = landmarks[8];
+                    // Thumb Tip (4)
+                    const thumbTip = landmarks[4];
 
-                // Map to Screen Coords with Sensitivity Scaling
-                // Sensitivity: Map center 50% of camera to 100% of screen.
-                const SENSITIVITY = cursorSensitivityRef.current;
+                    // Map to Screen Coords with Sensitivity Scaling
+                    // Sensitivity: Map center 50% of camera to 100% of screen.
+                    const SENSITIVITY = cursorSensitivityRef.current;
 
-                // Apply camera flip if enabled (horizontal mirror)
-                const rawX = isCameraFlippedRef.current ? (1 - indexTip.x) : indexTip.x;
+                    // Apply camera flip if enabled (horizontal mirror)
+                    const rawX = isCameraFlippedRef.current ? (1 - indexTip.x) : indexTip.x;
 
-                // 1. Normalize and Scale X
-                let normX = (rawX - 0.5) * SENSITIVITY + 0.5;
-                // Clamp to [0, 1]
-                normX = Math.max(0, Math.min(1, normX));
+                    // 1. Normalize and Scale X
+                    let normX = (rawX - 0.5) * SENSITIVITY + 0.5;
+                    // Clamp to [0, 1]
+                    normX = Math.max(0, Math.min(1, normX));
 
-                // 2. Normalize and Scale Y
-                let normY = (indexTip.y - 0.5) * SENSITIVITY + 0.5;
-                normY = Math.max(0, Math.min(1, normY));
+                    // 2. Normalize and Scale Y
+                    let normY = (indexTip.y - 0.5) * SENSITIVITY + 0.5;
+                    normY = Math.max(0, Math.min(1, normY));
 
-                const targetX = normX * window.innerWidth;
-                const targetY = normY * window.innerHeight;
+                    const targetX = normX * window.innerWidth;
+                    const targetY = normY * window.innerHeight;
 
-                // 1. Smoothing (Lerp)
-                // Factor 0.2 = smooth but responsive. Lower = smoother/slower.
-                const lerpFactor = 0.2;
-                smoothedCursorPosRef.current.x = smoothedCursorPosRef.current.x + (targetX - smoothedCursorPosRef.current.x) * lerpFactor;
-                smoothedCursorPosRef.current.y = smoothedCursorPosRef.current.y + (targetY - smoothedCursorPosRef.current.y) * lerpFactor;
+                    // 1. Smoothing (Lerp)
+                    // Factor 0.2 = smooth but responsive. Lower = smoother/slower.
+                    const lerpFactor = 0.2;
+                    smoothedCursorPosRef.current.x = smoothedCursorPosRef.current.x + (targetX - smoothedCursorPosRef.current.x) * lerpFactor;
+                    smoothedCursorPosRef.current.y = smoothedCursorPosRef.current.y + (targetY - smoothedCursorPosRef.current.y) * lerpFactor;
 
-                let finalX = smoothedCursorPosRef.current.x;
-                let finalY = smoothedCursorPosRef.current.y;
+                    let finalX = smoothedCursorPosRef.current.x;
+                    let finalY = smoothedCursorPosRef.current.y;
 
-                // 2. Snap-to-Button Logic
-                const SNAP_THRESHOLD = 50; // Pixels to snap
-                const UNSNAP_THRESHOLD = 100; // Pixels to unsnap (Hysteresis)
+                    // 2. Snap-to-Button Logic
+                    const SNAP_THRESHOLD = 50; // Pixels to snap
+                    const UNSNAP_THRESHOLD = 100; // Pixels to unsnap (Hysteresis)
 
-                if (snapStateRef.current.isSnapped) {
-                    // Check if we should unsnap
-                    const dist = Math.sqrt(
-                        Math.pow(finalX - snapStateRef.current.snapPos.x, 2) +
-                        Math.pow(finalY - snapStateRef.current.snapPos.y, 2)
-                    );
-
-                    if (dist > UNSNAP_THRESHOLD) {
-                        // REMOVE HIGHLIGHT
-                        if (snapStateRef.current.element) {
-                            snapStateRef.current.element.classList.remove('snap-highlight');
-                            snapStateRef.current.element.style.boxShadow = '';
-                            snapStateRef.current.element.style.backgroundColor = '';
-                            snapStateRef.current.element.style.borderColor = '';
-                        }
-
-                        snapStateRef.current = { isSnapped: false, element: null, snapPos: { x: 0, y: 0 } };
-                    } else {
-                        // Stay snapped
-                        finalX = snapStateRef.current.snapPos.x;
-                        finalY = snapStateRef.current.snapPos.y;
-                    }
-                } else {
-                    // Check if we should snap
-                    // Find all interactive elements
-                    if (loopNow - lastSnapTargetsUpdateMsRef.current > 1000) {
-                        snapTargetsRef.current = Array.from(
-                            document.querySelectorAll('button, input, select, .draggable'),
+                    if (snapStateRef.current.isSnapped) {
+                        // Check if we should unsnap
+                        const dist = Math.sqrt(
+                            Math.pow(finalX - snapStateRef.current.snapPos.x, 2) +
+                            Math.pow(finalY - snapStateRef.current.snapPos.y, 2)
                         );
-                        lastSnapTargetsUpdateMsRef.current = loopNow;
-                    }
-                    const targets = snapTargetsRef.current;
-                    let closest = null;
-                    let minDist = Infinity;
 
-                    for (const el of targets) {
-                        const rect = el.getBoundingClientRect();
-                        const centerX = rect.left + rect.width / 2;
-                        const centerY = rect.top + rect.height / 2;
-                        const dist = Math.sqrt(Math.pow(finalX - centerX, 2) + Math.pow(finalY - centerY, 2));
+                        if (dist > UNSNAP_THRESHOLD) {
+                            // REMOVE HIGHLIGHT
+                            if (snapStateRef.current.element) {
+                                snapStateRef.current.element.classList.remove('snap-highlight');
+                                snapStateRef.current.element.style.boxShadow = '';
+                                snapStateRef.current.element.style.backgroundColor = '';
+                                snapStateRef.current.element.style.borderColor = '';
+                            }
 
-                        if (dist < minDist) {
-                            minDist = dist;
-                            closest = { el, centerX, centerY };
+                            snapStateRef.current = { isSnapped: false, element: null, snapPos: { x: 0, y: 0 } };
+                        } else {
+                            // Stay snapped
+                            finalX = snapStateRef.current.snapPos.x;
+                            finalY = snapStateRef.current.snapPos.y;
                         }
-                    }
+                    } else {
+                        // Check if we should snap
+                        // Find all interactive elements
+                        if (loopNow - lastSnapTargetsUpdateMsRef.current > 1000) {
+                            snapTargetsRef.current = Array.from(
+                                document.querySelectorAll('button, input, select, .draggable'),
+                            );
+                            lastSnapTargetsUpdateMsRef.current = loopNow;
+                        }
+                        const targets = snapTargetsRef.current;
+                        let closest = null;
+                        let minDist = Infinity;
 
-                    if (closest && minDist < SNAP_THRESHOLD) {
-                        snapStateRef.current = {
-                            isSnapped: true,
-                            element: closest.el,
-                            snapPos: { x: closest.centerX, y: closest.centerY }
-                        };
-                        finalX = closest.centerX;
-                        finalY = closest.centerY;
+                        for (const el of targets) {
+                            const rect = el.getBoundingClientRect();
+                            const centerX = rect.left + rect.width / 2;
+                            const centerY = rect.top + rect.height / 2;
+                            const dist = Math.sqrt(Math.pow(finalX - centerX, 2) + Math.pow(finalY - centerY, 2));
 
-                        // SNAP HIGHLIGHT Logic
-                        closest.el.classList.add('snap-highlight');
-                        // Add some inline style for the glow if class isn't enough (using imperative for speed)
-                        closest.el.style.boxShadow = '0 0 20px rgba(34, 211, 238, 0.6)';
-                        closest.el.style.backgroundColor = 'rgba(6, 182, 212, 0.2)';
-                        closest.el.style.borderColor = 'rgba(34, 211, 238, 1)';
-                    }
-                }
-
-                // Evita re-render pesado a cada frame.
-                const lastCursor = lastCursorPosRef.current;
-                const shouldUpdateCursor =
-                    loopNow - lastCursorUpdateMsRef.current > 60 ||
-                    Math.abs(finalX - lastCursor.x) > 2 ||
-                    Math.abs(finalY - lastCursor.y) > 2;
-                if (shouldUpdateCursor) {
-                    lastCursorUpdateMsRef.current = loopNow;
-                    setCursorPos({ x: finalX, y: finalY });
-                }
-
-                // Trail Logic: Removed per user request
-
-                // Pinch Detection (Distance between Index and Thumb)
-                const distance = Math.sqrt(
-                    Math.pow(indexTip.x - thumbTip.x, 2) + Math.pow(indexTip.y - thumbTip.y, 2)
-                );
-
-                const isPinchNow = distance < 0.05; // Threshold
-                if (isPinchNow && !isPinching) {
-                    // Evita clique sintético com as configurações abertas (interfere nos switches nativos)
-                    if (!showSettingsRef.current) {
-                        const el = document.elementFromPoint(finalX, finalY);
-                        if (el) {
-                            const clickable = el.closest('button, input, a, [role="button"]');
-                            if (clickable && typeof clickable.click === 'function') {
-                                clickable.click();
-                            } else if (typeof el.click === 'function') {
-                                el.click();
+                            if (dist < minDist) {
+                                minDist = dist;
+                                closest = { el, centerX, centerY };
                             }
                         }
+
+                        if (closest && minDist < SNAP_THRESHOLD) {
+                            snapStateRef.current = {
+                                isSnapped: true,
+                                element: closest.el,
+                                snapPos: { x: closest.centerX, y: closest.centerY }
+                            };
+                            finalX = closest.centerX;
+                            finalY = closest.centerY;
+
+                            // SNAP HIGHLIGHT Logic
+                            closest.el.classList.add('snap-highlight');
+                            // Add some inline style for the glow if class isn't enough (using imperative for speed)
+                            closest.el.style.boxShadow = '0 0 20px rgba(34, 211, 238, 0.6)';
+                            closest.el.style.backgroundColor = 'rgba(6, 182, 212, 0.2)';
+                            closest.el.style.borderColor = 'rgba(34, 211, 238, 1)';
+                        }
                     }
-                }
-                if (isPinchNow !== lastPinchRef.current) {
-                    lastPinchRef.current = isPinchNow;
-                    setIsPinching(isPinchNow);
-                }
 
-                // Fist Detection for Gesture-Based Dragging (Popup Windows Only)
-                // Detects if all fingers are folded (tips closer to wrist than MCPs)
-                const isFingerFolded = (tipIdx, mcpIdx) => {
-                    const tip = landmarks[tipIdx];
-                    const mcp = landmarks[mcpIdx];
-                    const wrist = landmarks[0];
-                    const distTip = Math.sqrt(Math.pow(tip.x - wrist.x, 2) + Math.pow(tip.y - wrist.y, 2));
-                    const distMcp = Math.sqrt(Math.pow(mcp.x - wrist.x, 2) + Math.pow(mcp.y - wrist.y, 2));
-                    return distTip < distMcp; // Folded if tip is closer
-                };
+                    // Evita re-render pesado a cada frame.
+                    const lastCursor = lastCursorPosRef.current;
+                    const shouldUpdateCursor =
+                        loopNow - lastCursorUpdateMsRef.current > 60 ||
+                        Math.abs(finalX - lastCursor.x) > 2 ||
+                        Math.abs(finalY - lastCursor.y) > 2;
+                    if (shouldUpdateCursor) {
+                        lastCursorUpdateMsRef.current = loopNow;
+                        setCursorPos({ x: finalX, y: finalY });
+                    }
 
-                const isFist = isFingerFolded(8, 5) && isFingerFolded(12, 9) && isFingerFolded(16, 13) && isFingerFolded(20, 17);
+                    // Trail Logic: Removed per user request
 
-                // Get wrist position in screen coordinates (stable reference for fist gesture)
-                const wrist = landmarks[0];
-                const wristRawX = isCameraFlippedRef.current ? (1 - wrist.x) : wrist.x;
-                const wristNormX = Math.max(0, Math.min(1, (wristRawX - 0.5) * SENSITIVITY + 0.5));
-                const wristNormY = Math.max(0, Math.min(1, (wrist.y - 0.5) * SENSITIVITY + 0.5));
-                const wristScreenX = wristNormX * window.innerWidth;
-                const wristScreenY = wristNormY * window.innerHeight;
+                    // Pinch Detection (Distance between Index and Thumb)
+                    const distance = Math.sqrt(
+                        Math.pow(indexTip.x - thumbTip.x, 2) + Math.pow(indexTip.y - thumbTip.y, 2)
+                    );
 
-                if (isFist) {
-                    if (!activeDragElementRef.current) {
-                        // Only check popup windows (draggable elements)
-                        const draggableElements = [];
-
-                        for (const id of draggableElements) {
-                            const el = document.getElementById(id);
+                    const isPinchNow = distance < 0.05; // Threshold
+                    if (isPinchNow && !isPinching) {
+                        // Evita clique sintético com as configurações abertas (interfere nos switches nativos)
+                        if (!showSettingsRef.current) {
+                            const el = document.elementFromPoint(finalX, finalY);
                             if (el) {
-                                const rect = el.getBoundingClientRect();
-                                // Use the cursor position from before fist was made for hit detection
-                                if (finalX >= rect.left && finalX <= rect.right && finalY >= rect.top && finalY <= rect.bottom) {
-                                    activeDragElementRef.current = id;
-                                    bringToFront(id);
-                                    // Lock the initial wrist position when starting drag
-                                    lastWristPosRef.current = { x: wristScreenX, y: wristScreenY };
-                                    break;
+                                const clickable = el.closest('button, input, a, [role="button"]');
+                                if (clickable && typeof clickable.click === 'function') {
+                                    clickable.click();
+                                } else if (typeof el.click === 'function') {
+                                    el.click();
                                 }
                             }
                         }
                     }
+                    if (isPinchNow !== lastPinchRef.current) {
+                        lastPinchRef.current = isPinchNow;
+                        setIsPinching(isPinchNow);
+                    }
 
-                    if (activeDragElementRef.current) {
-                        // Use WRIST movement (not index finger) for stable dragging
-                        // The wrist doesn't move when making a fist
-                        const dx = wristScreenX - lastWristPosRef.current.x;
-                        const dy = wristScreenY - lastWristPosRef.current.y;
+                    // Fist Detection for Gesture-Based Dragging (Popup Windows Only)
+                    // Detects if all fingers are folded (tips closer to wrist than MCPs)
+                    const isFingerFolded = (tipIdx, mcpIdx) => {
+                        const tip = landmarks[tipIdx];
+                        const mcp = landmarks[mcpIdx];
+                        const wrist = landmarks[0];
+                        const distTip = Math.sqrt(Math.pow(tip.x - wrist.x, 2) + Math.pow(tip.y - wrist.y, 2));
+                        const distMcp = Math.sqrt(Math.pow(mcp.x - wrist.x, 2) + Math.pow(mcp.y - wrist.y, 2));
+                        return distTip < distMcp; // Folded if tip is closer
+                    };
 
-                        // Update position only if there's actual movement
-                        if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
-                            updateElementPosition(activeDragElementRef.current, dx, dy);
+                    const isFist = isFingerFolded(8, 5) && isFingerFolded(12, 9) && isFingerFolded(16, 13) && isFingerFolded(20, 17);
+
+                    // Get wrist position in screen coordinates (stable reference for fist gesture)
+                    const wrist = landmarks[0];
+                    const wristRawX = isCameraFlippedRef.current ? (1 - wrist.x) : wrist.x;
+                    const wristNormX = Math.max(0, Math.min(1, (wristRawX - 0.5) * SENSITIVITY + 0.5));
+                    const wristNormY = Math.max(0, Math.min(1, (wrist.y - 0.5) * SENSITIVITY + 0.5));
+                    const wristScreenX = wristNormX * window.innerWidth;
+                    const wristScreenY = wristNormY * window.innerHeight;
+
+                    if (isFist) {
+                        if (!activeDragElementRef.current) {
+                            // Only check popup windows (draggable elements)
+                            const draggableElements = [];
+
+                            for (const id of draggableElements) {
+                                const el = document.getElementById(id);
+                                if (el) {
+                                    const rect = el.getBoundingClientRect();
+                                    // Use the cursor position from before fist was made for hit detection
+                                    if (finalX >= rect.left && finalX <= rect.right && finalY >= rect.top && finalY <= rect.bottom) {
+                                        activeDragElementRef.current = id;
+                                        bringToFront(id);
+                                        // Lock the initial wrist position when starting drag
+                                        lastWristPosRef.current = { x: wristScreenX, y: wristScreenY };
+                                        break;
+                                    }
+                                }
+                            }
                         }
 
-                        // Update last wrist position
-                        lastWristPosRef.current = { x: wristScreenX, y: wristScreenY };
+                        if (activeDragElementRef.current) {
+                            // Use WRIST movement (not index finger) for stable dragging
+                            // The wrist doesn't move when making a fist
+                            const dx = wristScreenX - lastWristPosRef.current.x;
+                            const dy = wristScreenY - lastWristPosRef.current.y;
+
+                            // Update position only if there's actual movement
+                            if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) {
+                                updateElementPosition(activeDragElementRef.current, dx, dy);
+                            }
+
+                            // Update last wrist position
+                            lastWristPosRef.current = { x: wristScreenX, y: wristScreenY };
+                        }
+                    } else {
+                        activeDragElementRef.current = null;
                     }
-                } else {
-                    activeDragElementRef.current = null;
+
+                    // Sync state for visual feedback (only on change)
+                    if (activeDragElementRef.current !== lastActiveDragElementRef.current) {
+                        setActiveDragElement(activeDragElementRef.current);
+                        lastActiveDragElementRef.current = activeDragElementRef.current;
+                    }
+
+                    lastCursorPosRef.current = { x: finalX, y: finalY };
+
+                    // Draw Skeleton
+                    drawSkeleton(ctx, landmarks);
                 }
 
-                // Sync state for visual feedback (only on change)
-                if (activeDragElementRef.current !== lastActiveDragElementRef.current) {
-                    setActiveDragElement(activeDragElementRef.current);
-                    lastActiveDragElementRef.current = activeDragElementRef.current;
-                }
-
-                lastCursorPosRef.current = { x: finalX, y: finalY };
-
-                // Draw Skeleton
-                drawSkeleton(ctx, landmarks);
             }
-
-        }
 
         }
 
@@ -1796,74 +1729,6 @@ function App() {
         [agendaDisplayReminders, googleAgendaEvents, agendaReminders],
     );
 
-    const toggleFinancePanel = useCallback(() => {
-        setFinancePanelOpen((prev) => {
-            const next = !prev;
-            console.log('[FINANCE][UI] toggle panel', { next });
-            return next;
-        });
-    }, []);
-
-    useEffect(() => {
-        if (financePeriod.type === 'month') {
-            financeMonthAnchorRef.current = { year: financePeriod.year, month: financePeriod.month };
-        }
-    }, [financePeriod]);
-
-    const emitFinanceSnapshot = useCallback((period) => {
-        setFinanceError('');
-        setFinanceLoading(true);
-        if (period.type === 'month') {
-            socket.emit('finance_get_snapshot', { limit: 800, year: period.year, month: period.month });
-        } else {
-            socket.emit('finance_get_snapshot', {
-                limit: 800,
-                start_date: period.start_date,
-                end_date: period.end_date,
-            });
-        }
-    }, []);
-
-    const changeFinanceMonth = useCallback(
-        (y, m) => {
-            const p = { type: 'month', year: y, month: m };
-            setFinancePeriod(p);
-            emitFinanceSnapshot(p);
-        },
-        [emitFinanceSnapshot],
-    );
-
-    const applyFinanceCustomRange = useCallback(
-        (start, end) => {
-            const p = { type: 'custom', start_date: start, end_date: end };
-            setFinancePeriod(p);
-            emitFinanceSnapshot(p);
-        },
-        [emitFinanceSnapshot],
-    );
-
-    const switchFinanceToCustomPeriod = useCallback(() => {
-        let start;
-        let end;
-        if (financePeriod.type === 'month') {
-            const y = financePeriod.year;
-            const mo = financePeriod.month;
-            const d0 = new Date(y, mo - 1, 1);
-            const d1 = new Date(y, mo, 0);
-            start = `${d0.getFullYear()}-${String(d0.getMonth() + 1).padStart(2, '0')}-${String(d0.getDate()).padStart(2, '0')}`;
-            end = `${d1.getFullYear()}-${String(d1.getMonth() + 1).padStart(2, '0')}-${String(d1.getDate()).padStart(2, '0')}`;
-        } else {
-            start = financePeriod.start_date;
-            end = financePeriod.end_date;
-        }
-        applyFinanceCustomRange(start, end);
-    }, [financePeriod, applyFinanceCustomRange]);
-
-    const backFinanceToMonthMode = useCallback(() => {
-        const a = financeMonthAnchorRef.current;
-        changeFinanceMonth(a.year, a.month);
-    }, [changeFinanceMonth]);
-
     const addBrazilNationalHolidays = useCallback((year) => {
         const y = Number(year);
         if (!Number.isInteger(y) || y < 1900 || y > 2400) return;
@@ -1892,19 +1757,6 @@ function App() {
         }
     }, [agendaReminders]);
 
-    useEffect(() => {
-        console.log('[FINANCE][UI] financePanelOpen changed', { open: financePanelOpen });
-        if (!financePanelOpen) return;
-        const d = new Date();
-        const y = d.getFullYear();
-        const mo = d.getMonth() + 1;
-        const p = { type: 'month', year: y, month: mo };
-        setFinancePeriod(p);
-        financeMonthAnchorRef.current = { year: y, month: mo };
-        setFinanceError('');
-        setFinanceLoading(true);
-        socket.emit('finance_get_snapshot', { limit: 800, year: y, month: mo });
-    }, [financePanelOpen]);
 
     const togglePower = () => {
         if (isConnected) {
@@ -2234,8 +2086,7 @@ function App() {
                 </div>
             )}
 
-            {/* Fundo uniforme: gradiente radial + noise (overlay) clarificavam o centro e vazavam pelo
-                canvas transparente da orb → vulto. Visualizer pinta #000 a cada frame. */}
+            {/* Orb 3D em tela cheia (modo normal): atrás da UI; no modo modular fica num painel redimensionável. */}
 
             {/* Top Bar (Draggable) — oculto nas configurações para não competir com o painel (z-index + um único fluxo de fechar) */}
             {!showSettings && (
@@ -2293,40 +2144,63 @@ function App() {
                 </div>
             )}
 
-            {/* Main Content */}
-            <div className="flex-1 relative z-10 flex flex-col items-center justify-center">
-                {/* Central Visualizer (AI Audio) */}
+            {!isModularMode && (
                 <div
                     id="visualizer"
-                    className={`absolute flex items-center justify-center overflow-hidden border-0 bg-transparent transition-all duration-500 outline-none focus:outline-none focus-visible:outline-none
-                        ${isModularMode ? (activeDragElement === 'visualizer' ? 'ring-1 ring-white/10 bg-white/5' : '') + ' rounded-2xl pointer-events-auto' : 'pointer-events-none'}
-                    `}
-                    style={{
-                        left: elementPositions.visualizer.x,
-                        top: elementPositions.visualizer.y,
-                        transform: 'translate(-50%, -50%)',
-                        width: elementSizes.visualizer.w,
-                        height: elementSizes.visualizer.h
-                    }}
-                    onMouseDown={(e) => handleMouseDown(e, 'visualizer')}
+                    className="fixed inset-0 z-[1] pointer-events-none"
+                    aria-hidden
                 >
-                    {/* <div className="absolute inset-0 bg-[url('https://grainy-gradients.vercel.app/noise.svg')] opacity-10 pointer-events-none mix-blend-overlay z-10"></div> */}
-                    <div className="relative z-20">
-                        <Visualizer
-                            audioData={AI_VIS_SILENT_BANDS}
-                            aiAudioSpectrumRef={aiSpectrumRef}
-                            userAudioData={MIC_VIS_SILENT_BANDS}
-                            userAudioSpectrumRef={micSpectrumRef}
-                            isListening={isConnected && (!isMuted || isAiSpeaking)}
-                            isInitializing={isOrbInitializing}
-                            intensity={isImageGenerating ? 1 : (isImageGenerationPending ? 0.65 : 0)}
-                            micMuted={isConnected && isMuted}
-                            width={elementSizes.visualizer.w}
-                            height={elementSizes.visualizer.h}
-                        />
-                    </div>
-                    {isModularMode && <div className={`absolute top-2 right-2 text-xs font-bold tracking-widest z-20 ${activeDragElement === 'visualizer' ? 'text-green-500' : 'text-yellow-500/50'}`}>VISUALIZER</div>}
+                    <Visualizer
+                        fillScreen
+                        audioData={AI_VIS_SILENT_BANDS}
+                        aiAudioSpectrumRef={aiSpectrumRef}
+                        userAudioData={MIC_VIS_SILENT_BANDS}
+                        userAudioSpectrumRef={micSpectrumRef}
+                        isListening={isConnected && (!isMuted || isAiSpeaking)}
+                        isInitializing={isOrbInitializing}
+                        intensity={isImageGenerating ? 1 : (isImageGenerationPending ? 0.65 : 0)}
+                        micMuted={isConnected && isMuted}
+                        isAiSpeaking={isAiSpeaking}
+                    />
                 </div>
+            )}
+
+            {/* Main Content */}
+            <div className="flex-1 relative z-10 flex flex-col items-center justify-center">
+                {/* Visualizer em painel (modo modular arrastável) */}
+                {isModularMode && (
+                    <div
+                        id="visualizer"
+                        className={`absolute flex items-center justify-center overflow-hidden border-0 bg-transparent transition-all duration-500 outline-none focus:outline-none focus-visible:outline-none
+                            ${activeDragElement === 'visualizer' ? 'ring-1 ring-white/10 bg-white/5' : ''} rounded-2xl pointer-events-auto
+                        `}
+                        style={{
+                            left: elementPositions.visualizer.x,
+                            top: elementPositions.visualizer.y,
+                            transform: 'translate(-50%, -50%)',
+                            width: elementSizes.visualizer.w,
+                            height: elementSizes.visualizer.h
+                        }}
+                        onMouseDown={(e) => handleMouseDown(e, 'visualizer')}
+                    >
+                        <div className="relative z-20 h-full w-full">
+                            <Visualizer
+                                audioData={AI_VIS_SILENT_BANDS}
+                                aiAudioSpectrumRef={aiSpectrumRef}
+                                userAudioData={MIC_VIS_SILENT_BANDS}
+                                userAudioSpectrumRef={micSpectrumRef}
+                                isListening={isConnected && (!isMuted || isAiSpeaking)}
+                                isInitializing={isOrbInitializing}
+                                intensity={isImageGenerating ? 1 : (isImageGenerationPending ? 0.65 : 0)}
+                                micMuted={isConnected && isMuted}
+                                isAiSpeaking={isAiSpeaking}
+                                width={elementSizes.visualizer.w}
+                                height={elementSizes.visualizer.h}
+                            />
+                        </div>
+                        <div className={`absolute top-2 right-2 text-xs font-bold tracking-widest z-20 ${activeDragElement === 'visualizer' ? 'text-green-500' : 'text-yellow-500/50'}`}>VISUALIZER</div>
+                    </div>
+                )}
 
                 <AssistantTimerDock timers={assistantTimers} onDismissAlarm={dismissTimerAlarm} />
 
@@ -2345,35 +2219,6 @@ function App() {
                     googleError={googleAgendaError}
                 />
 
-                <FinancePanel
-                    open={financePanelOpen}
-                    onClose={() => setFinancePanelOpen(false)}
-                    snapshot={financeSnapshot}
-                    loading={financeLoading}
-                    error={financeError}
-                    financePeriod={financePeriod}
-                    onMonthChange={changeFinanceMonth}
-                    onApplyCustomRange={applyFinanceCustomRange}
-                    onSwitchToCustomPeriod={switchFinanceToCustomPeriod}
-                    onBackToMonthMode={backFinanceToMonthMode}
-                    onRefresh={() => {
-                        setFinanceError('');
-                        setFinanceLoading(true);
-                        if (financePeriod.type === 'month') {
-                            socket.emit('finance_manual_update', {
-                                limit: 500,
-                                year: financePeriod.year,
-                                month: financePeriod.month,
-                            });
-                        } else {
-                            socket.emit('finance_manual_update', {
-                                limit: 500,
-                                start_date: financePeriod.start_date,
-                                end_date: financePeriod.end_date,
-                            });
-                        }
-                    }}
-                />
 
                 {/* Video Feed Overlay */}
                 {/* Floating Project Label */}
@@ -2512,9 +2357,7 @@ function App() {
                     isHandTrackingEnabled={isHandTrackingEnabled}
                     showSettings={showSettings}
                     agendaOpen={agendaPanelOpen}
-                    financeOpen={financePanelOpen}
                     onToggleAgenda={() => setAgendaPanelOpen((v) => !v)}
-                    onToggleFinance={toggleFinancePanel}
                     onTogglePower={togglePower}
                     onToggleMute={toggleMute}
                     onToggleVideo={toggleVideo}

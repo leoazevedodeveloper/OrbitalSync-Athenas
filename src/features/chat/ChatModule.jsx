@@ -251,186 +251,176 @@ const ChatModule = ({
             `}</style>
             {/* Mensagens em toda a largura: ATHENAS à esquerda, tu à direita */}
             {showMessageTranscript ? (
-            <div
-                id="chat"
-                onMouseDown={onMouseDown}
-                className={`fixed left-0 right-0 z-[30] pointer-events-none transition-all duration-300 top-14 sm:top-16 bottom-[13.5rem] sm:bottom-[14rem] ${
-                    activeDragElement === 'chat' ? 'ring-2 ring-inset ring-white/15' : ''
-                }`}
-            >
                 <div
-                    className="h-full overflow-y-auto overflow-x-hidden pt-3 pb-6 custom-scrollbar pointer-events-auto"
-                    style={{ paddingLeft: leftInset, paddingRight: rightInset }}
+                    id="chat"
+                    onMouseDown={onMouseDown}
+                    className={`fixed left-0 right-0 z-[30] pointer-events-none transition-all duration-300 top-14 sm:top-16 bottom-[13.5rem] sm:bottom-[14rem] ${activeDragElement === 'chat' ? 'ring-2 ring-inset ring-white/15' : ''
+                        }`}
                 >
-                <div className="flex flex-col gap-5">
-                {renderedMessages.map((msg, i) => {
-                    const snd = msg.sender?.toLowerCase() || '';
-                    const isAssistant =
-                        snd.includes('athenas') || snd.includes('ada') || snd.includes('jarvis');
-                    const isSystem = snd.includes('system');
-                    const isUser = !isAssistant && !isSystem;
+                    <div
+                        className="h-full overflow-y-auto overflow-x-hidden pt-3 pb-6 custom-scrollbar pointer-events-auto"
+                        style={{ paddingLeft: leftInset, paddingRight: rightInset }}
+                    >
+                        <div className="flex flex-col gap-5">
+                            {renderedMessages.map((msg, i) => {
+                                const snd = msg.sender?.toLowerCase() || '';
+                                const isAssistant =
+                                    snd.includes('athenas') || snd.includes('ada') || snd.includes('jarvis');
+                                const isSystem = snd.includes('system');
+                                const isUser = !isAssistant && !isSystem;
 
-                    if (msg?.image?.data || msg?.image?.url) {
-                        const mimeType = msg?.image?.mime_type || msg?.image?.mimeType || 'image/png';
-                        const thumbSrc = imageMessageSrc(msg.image, mimeType);
-                        const rowAlign = isSystem
-                            ? 'justify-center px-2'
-                            : isUser
-                              ? 'justify-end'
-                              : 'justify-start';
-                        const capAlign = isUser ? 'text-right' : isSystem ? 'text-center' : 'text-left';
-                        const openModal = (e) => {
-                            if (e) {
-                                e.stopPropagation();
-                                e.preventDefault();
-                            }
-                            setImageModal({
-                                mimeType,
-                                data: msg.image.data,
-                                url: msg.image.url,
-                                caption: msg.text || 'Imagem gerada'
-                            });
-                        };
-                        return (
-                            <div
-                                key={msg.id || `img-${i}`}
-                                className={`flex w-full ${rowAlign}`}
-                                style={messageMotionStyle(msg)}
-                                onMouseDown={(e) => e.stopPropagation()}
-                                onClick={openModal}
-                                onPointerUp={openModal}
-                            >
-                                <div
-                                    className={`flex min-w-0 max-w-[min(100%,26rem)] flex-col ${
-                                        isUser ? 'items-end' : 'items-start'
-                                    }`}
-                                >
-                                    {(isAssistant || isUser) && (
+                                if (msg?.image?.data || msg?.image?.url) {
+                                    const mimeType = msg?.image?.mime_type || msg?.image?.mimeType || 'image/png';
+                                    const thumbSrc = imageMessageSrc(msg.image, mimeType);
+                                    const rowAlign = isSystem
+                                        ? 'justify-center px-2'
+                                        : isUser
+                                            ? 'justify-end'
+                                            : 'justify-start';
+                                    const capAlign = isUser ? 'text-right' : isSystem ? 'text-center' : 'text-left';
+                                    const openModal = (e) => {
+                                        if (e) {
+                                            e.stopPropagation();
+                                            e.preventDefault();
+                                        }
+                                        setImageModal({
+                                            mimeType,
+                                            data: msg.image.data,
+                                            url: msg.image.url,
+                                            caption: msg.text || 'Imagem gerada'
+                                        });
+                                    };
+                                    return (
                                         <div
-                                            className={`mb-2.5 flex items-center gap-2 px-1 ${chatFont} ${
-                                                isUser ? 'flex-row-reverse' : 'flex-row'
-                                            }`}
+                                            key={msg.id || `img-${i}`}
+                                            className={`flex w-full ${rowAlign}`}
+                                            style={messageMotionStyle(msg)}
+                                            onMouseDown={(e) => e.stopPropagation()}
+                                            onClick={openModal}
+                                            onPointerUp={openModal}
                                         >
-                                            {isUser ? (
-                                                <UserRound size={13} className="text-emerald-300/90 shrink-0" strokeWidth={2.5} />
-                                            ) : (
-                                                <Bot size={13} className="text-cyan-300 shrink-0" strokeWidth={2.5} />
-                                            )}
-                                            <span
-                                                className={`text-[11px] uppercase tracking-[0.14em] ${
-                                                    isUser ? 'text-emerald-200/95' : 'text-cyan-200/95'
-                                                }`}
+                                            <div
+                                                className={`flex min-w-0 max-w-[min(100%,26rem)] flex-col ${isUser ? 'items-end' : 'items-start'
+                                                    }`}
                                             >
-                                                {msg.sender}
-                                            </span>
-                                            <span className="text-[10px] tracking-wide text-zinc-300 tabular-nums">
-                                                {msg.time}
+                                                {(isAssistant || isUser) && (
+                                                    <div
+                                                        className={`mb-2.5 flex items-center gap-2 px-1 ${chatFont} ${isUser ? 'flex-row-reverse' : 'flex-row'
+                                                            }`}
+                                                    >
+                                                        {isUser ? (
+                                                            <UserRound size={13} className="text-emerald-300/90 shrink-0" strokeWidth={2.5} />
+                                                        ) : (
+                                                            <Bot size={13} className="text-cyan-300 shrink-0" strokeWidth={2.5} />
+                                                        )}
+                                                        <span
+                                                            className={`text-[11px] uppercase tracking-[0.14em] ${isUser ? 'text-emerald-200/95' : 'text-cyan-200/95'
+                                                                }`}
+                                                        >
+                                                            {msg.sender}
+                                                        </span>
+                                                        <span className="text-[10px] tracking-wide text-zinc-300 tabular-nums">
+                                                            {msg.time}
+                                                        </span>
+                                                    </div>
+                                                )}
+                                                <div
+                                                    className={`w-full min-w-0 max-w-full rounded-2xl p-2.5 shadow-lg ring-1 ${isUser
+                                                        ? 'rounded-tr-none border border-white/20 bg-zinc-100 ring-white/10'
+                                                        : isAssistant
+                                                            ? 'rounded-tl-none border border-cyan-500/25 bg-gradient-to-br from-zinc-800/95 via-zinc-900/95 to-black/90 ring-cyan-500/10'
+                                                            : 'border border-white/10 bg-zinc-900/90 ring-white/5'
+                                                        }`}
+                                                >
+                                                    {msg.text ? (
+                                                        <div
+                                                            className={`${chatFont} mb-2 whitespace-pre-wrap break-words px-2 text-[15px] leading-snug sm:text-base ${isUser ? 'text-zinc-950' : 'text-zinc-50'
+                                                                } ${capAlign}`}
+                                                        >
+                                                            {msg.text}
+                                                        </div>
+                                                    ) : null}
+                                                    <img
+                                                        src={thumbSrc}
+                                                        alt="Imagem gerada"
+                                                        className="max-h-[min(55vh,420px)] max-w-full rounded-xl border border-white/10 object-contain shadow-[0_10px_30px_rgba(0,0,0,0.35)] cursor-zoom-in"
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            e.preventDefault();
+                                                        }}
+                                                        onMouseDown={(e) => e.stopPropagation()}
+                                                        onTouchStart={(e) => e.stopPropagation()}
+                                                    />
+                                                </div>
+                                            </div>
+                                        </div>
+                                    );
+                                }
+
+                                if (isSystem) {
+                                    return (
+                                        <div
+                                            key={msg.id || `sys-${i}`}
+                                            className="flex justify-center px-2"
+                                            style={messageMotionStyle(msg)}
+                                        >
+                                            <span
+                                                className={`${chatFont} max-w-[min(100%,28rem)] whitespace-pre-wrap break-words text-center rounded-full border border-white/20 bg-white/[0.08] px-4 py-1.5 text-[10px] uppercase tracking-[0.16em] text-zinc-200 shadow-[0_4px_20px_rgba(0,0,0,0.35)]`}
+                                            >
+                                                {msg.text}
                                             </span>
                                         </div>
-                                    )}
+                                    );
+                                }
+
+                                const rowAlign = isUser ? 'justify-end' : 'justify-start';
+
+                                return (
                                     <div
-                                        className={`w-full min-w-0 max-w-full rounded-2xl p-2.5 shadow-lg ring-1 ${
-                                            isUser
-                                                ? 'rounded-tr-none border border-white/20 bg-zinc-100 ring-white/10'
-                                                : isAssistant
-                                                  ? 'rounded-tl-none border border-cyan-500/25 bg-gradient-to-br from-zinc-800/95 via-zinc-900/95 to-black/90 ring-cyan-500/10'
-                                                  : 'border border-white/10 bg-zinc-900/90 ring-white/5'
-                                        }`}
+                                        key={msg.id || `msg-${i}`}
+                                        className={`w-full flex ${rowAlign}`}
+                                        style={messageMotionStyle(msg)}
                                     >
-                                        {msg.text ? (
+                                        <div
+                                            className={`flex min-w-0 max-w-[min(100%,26rem)] flex-col ${isUser ? 'items-end text-right' : 'items-start text-left'
+                                                }`}
+                                        >
                                             <div
-                                                className={`${chatFont} mb-2 whitespace-pre-wrap break-words px-2 text-[15px] leading-snug sm:text-base ${
-                                                    isUser ? 'text-zinc-950' : 'text-zinc-50'
-                                                } ${capAlign}`}
+                                                className={`mb-2.5 flex items-center gap-2 px-1 ${chatFont} ${isUser ? 'flex-row-reverse' : 'flex-row'
+                                                    }`}
+                                            >
+                                                {isUser ? (
+                                                    <UserRound size={13} className="text-emerald-300/90 shrink-0" strokeWidth={2.5} />
+                                                ) : (
+                                                    <Bot size={13} className="text-cyan-300 shrink-0" strokeWidth={2.5} />
+                                                )}
+                                                <span
+                                                    className={`text-[11px] uppercase tracking-[0.14em] ${isUser ? 'text-emerald-200/95' : 'text-cyan-200/95'
+                                                        }`}
+                                                >
+                                                    {msg.sender}
+                                                </span>
+                                                <span className="text-[10px] tracking-wide text-zinc-300 tabular-nums">
+                                                    {msg.time}
+                                                </span>
+                                            </div>
+                                            <div
+                                                className={`${chatFont} w-full min-w-0 max-w-full whitespace-pre-wrap break-words px-4 py-3.5 text-[15px] leading-snug sm:text-base transition-all shadow-lg ring-1
+                                    ${isUser
+                                                        ? 'rounded-2xl rounded-tr-none border border-white/20 bg-zinc-100 text-zinc-950 ring-white/10'
+                                                        : 'rounded-2xl rounded-tl-none border border-cyan-500/25 bg-gradient-to-br from-zinc-800/95 via-zinc-900/95 to-black/90 text-zinc-50 ring-cyan-500/10'
+                                                    }`}
                                             >
                                                 {msg.text}
                                             </div>
-                                        ) : null}
-                                        <img
-                                            src={thumbSrc}
-                                            alt="Imagem gerada"
-                                            className="max-h-[min(55vh,420px)] max-w-full rounded-xl border border-white/10 object-contain shadow-[0_10px_30px_rgba(0,0,0,0.35)] cursor-zoom-in"
-                                            onClick={(e) => {
-                                                e.stopPropagation();
-                                                e.preventDefault();
-                                            }}
-                                            onMouseDown={(e) => e.stopPropagation()}
-                                            onTouchStart={(e) => e.stopPropagation()}
-                                        />
+                                        </div>
                                     </div>
-                                </div>
-                            </div>
-                        );
-                    }
-
-                    if (isSystem) {
-                        return (
-                            <div
-                                key={msg.id || `sys-${i}`}
-                                className="flex justify-center px-2"
-                                style={messageMotionStyle(msg)}
-                            >
-                                <span
-                                    className={`${chatFont} max-w-[min(100%,28rem)] whitespace-pre-wrap break-words text-center rounded-full border border-white/20 bg-white/[0.08] px-4 py-1.5 text-[10px] uppercase tracking-[0.16em] text-zinc-200 shadow-[0_4px_20px_rgba(0,0,0,0.35)]`}
-                                >
-                                    {msg.text}
-                                </span>
-                            </div>
-                        );
-                    }
-
-                    const rowAlign = isUser ? 'justify-end' : 'justify-start';
-
-                    return (
-                        <div
-                            key={msg.id || `msg-${i}`}
-                            className={`w-full flex ${rowAlign}`}
-                            style={messageMotionStyle(msg)}
-                        >
-                            <div
-                                className={`flex min-w-0 max-w-[min(100%,26rem)] flex-col ${
-                                    isUser ? 'items-end text-right' : 'items-start text-left'
-                                }`}
-                            >
-                                <div
-                                    className={`mb-2.5 flex items-center gap-2 px-1 ${chatFont} ${
-                                        isUser ? 'flex-row-reverse' : 'flex-row'
-                                    }`}
-                                >
-                                    {isUser ? (
-                                        <UserRound size={13} className="text-emerald-300/90 shrink-0" strokeWidth={2.5} />
-                                    ) : (
-                                        <Bot size={13} className="text-cyan-300 shrink-0" strokeWidth={2.5} />
-                                    )}
-                                    <span
-                                        className={`text-[11px] uppercase tracking-[0.14em] ${
-                                            isUser ? 'text-emerald-200/95' : 'text-cyan-200/95'
-                                        }`}
-                                    >
-                                        {msg.sender}
-                                    </span>
-                                    <span className="text-[10px] tracking-wide text-zinc-300 tabular-nums">
-                                        {msg.time}
-                                    </span>
-                                </div>
-                                <div
-                                    className={`${chatFont} w-full min-w-0 max-w-full whitespace-pre-wrap break-words px-4 py-3.5 text-[15px] leading-snug sm:text-base transition-all shadow-lg ring-1
-                                    ${
-                                        isUser
-                                            ? 'rounded-2xl rounded-tr-none border border-white/20 bg-zinc-100 text-zinc-950 ring-white/10'
-                                            : 'rounded-2xl rounded-tl-none border border-cyan-500/25 bg-gradient-to-br from-zinc-800/95 via-zinc-900/95 to-black/90 text-zinc-50 ring-cyan-500/10'
-                                    }`}
-                                >
-                                    {msg.text}
-                                </div>
-                            </div>
+                                );
+                            })}
+                            <div ref={messagesEndRef} className="h-0 shrink-0" aria-hidden />
                         </div>
-                    );
-                })}
-                    <div ref={messagesEndRef} className="h-0 shrink-0" aria-hidden />
+                    </div>
                 </div>
-                </div>
-            </div>
             ) : null}
 
             {isImageGenerating && (
@@ -541,9 +531,8 @@ const ChatModule = ({
 
             {isModularMode && (
                 <div
-                    className={`fixed top-16 left-3 z-[35] rounded-xl border border-white/10 px-3 py-1 text-[9px] font-bold tracking-[0.2em] uppercase backdrop-blur-xl bg-black/50 pointer-events-none ${
-                        activeDragElement === 'chat' ? 'text-zinc-100' : 'text-zinc-600'
-                    }`}
+                    className={`fixed top-16 left-3 z-[35] rounded-xl border border-white/10 px-3 py-1 text-[9px] font-bold tracking-[0.2em] uppercase backdrop-blur-xl bg-black/50 pointer-events-none ${activeDragElement === 'chat' ? 'text-zinc-100' : 'text-zinc-600'
+                        }`}
                 >
                     CHAT_MODULE_V2
                 </div>

@@ -336,64 +336,6 @@ def try_apply_supabase_config(settings: Dict[str, Any]) -> bool:
             settings["face_auth_enabled"] = bool(athena_vals["face_auth_enabled"])
         if "camera_flipped" in athena_vals:
             settings["camera_flipped"] = bool(athena_vals["camera_flipped"])
-        if "semantic_search_enabled" in athena_vals:
-            settings["semantic_search_enabled"] = bool(athena_vals["semantic_search_enabled"])
-        if "semantic_embed_index" in athena_vals:
-            settings["semantic_embed_index"] = bool(athena_vals["semantic_embed_index"])
-        if "semantic_embed_senders" in athena_vals and athena_vals["semantic_embed_senders"] is not None:
-            s = str(athena_vals["semantic_embed_senders"]).strip()
-            settings["semantic_embed_senders"] = s or "User, ATHENAS"
-        if "chat_startup_context_limit" in athena_vals:
-            try:
-                settings["chat_startup_context_limit"] = max(
-                    10, min(500, int(athena_vals["chat_startup_context_limit"]))
-                )
-            except (TypeError, ValueError):
-                pass
-        if "semantic_embed_min_length" in athena_vals:
-            try:
-                settings["semantic_embed_min_length"] = max(
-                    0, min(500, int(athena_vals["semantic_embed_min_length"]))
-                )
-            except (TypeError, ValueError):
-                pass
-        if "semantic_embed_max_chars" in athena_vals:
-            try:
-                settings["semantic_embed_max_chars"] = max(
-                    200, min(8000, int(athena_vals["semantic_embed_max_chars"]))
-                )
-            except (TypeError, ValueError):
-                pass
-        if "memory_remote_selective" in athena_vals:
-            settings["memory_remote_selective"] = bool(athena_vals["memory_remote_selective"])
-        if "memory_full_remote" in athena_vals:
-            settings["memory_full_remote"] = bool(athena_vals["memory_full_remote"])
-        if "memory_ollama_gate_enabled" in athena_vals:
-            settings["memory_ollama_gate_enabled"] = bool(athena_vals["memory_ollama_gate_enabled"])
-        if "memory_gemini_gate_enabled" in athena_vals:
-            settings["memory_gemini_gate_enabled"] = bool(athena_vals["memory_gemini_gate_enabled"])
-        if "memory_gate_model" in athena_vals and athena_vals["memory_gate_model"] is not None:
-            settings["memory_gate_model"] = str(athena_vals["memory_gate_model"]).strip()
-        if "memory_ollama_model" in athena_vals and athena_vals["memory_ollama_model"] is not None:
-            settings["memory_ollama_model"] = str(athena_vals["memory_ollama_model"]).strip()
-        if "memory_ollama_url" in athena_vals and athena_vals["memory_ollama_url"] is not None:
-            settings["memory_ollama_url"] = str(athena_vals["memory_ollama_url"]).strip()
-        if "memory_gate_retries" in athena_vals:
-            try:
-                settings["memory_gate_retries"] = max(
-                    1, min(5, int(athena_vals["memory_gate_retries"]))
-                )
-            except (TypeError, ValueError):
-                pass
-        if "memory_gate_timeout_sec" in athena_vals:
-            try:
-                settings["memory_gate_timeout_sec"] = max(
-                    3.0, min(120.0, float(athena_vals["memory_gate_timeout_sec"]))
-                )
-            except (TypeError, ValueError):
-                pass
-        if "memory_salience_debug" in athena_vals:
-            settings["memory_salience_debug"] = bool(athena_vals["memory_salience_debug"])
         # tool_permissions dentro do JSON (se existir) soma à tabela relacional
         tp_json = athena_vals.get("tool_permissions")
         if isinstance(tp_json, dict):
@@ -453,53 +395,6 @@ def persist_settings_to_supabase(settings: Dict[str, Any]) -> Tuple[bool, str]:
             current.pop("tool_permissions", None)
             current["face_auth_enabled"] = bool(settings.get("face_auth_enabled", False))
             current["camera_flipped"] = bool(settings.get("camera_flipped", False))
-            current["semantic_search_enabled"] = bool(settings.get("semantic_search_enabled", True))
-            current["semantic_embed_index"] = bool(settings.get("semantic_embed_index", True))
-            senders = str(settings.get("semantic_embed_senders") or "User, ATHENAS").strip() or "User, ATHENAS"
-            current["semantic_embed_senders"] = senders
-            try:
-                current["chat_startup_context_limit"] = max(
-                    10, min(500, int(settings.get("chat_startup_context_limit", 100)))
-                )
-            except (TypeError, ValueError):
-                current["chat_startup_context_limit"] = 100
-            try:
-                current["semantic_embed_min_length"] = max(
-                    0, min(500, int(settings.get("semantic_embed_min_length", 24)))
-                )
-            except (TypeError, ValueError):
-                current["semantic_embed_min_length"] = 24
-            try:
-                current["semantic_embed_max_chars"] = max(
-                    200, min(8000, int(settings.get("semantic_embed_max_chars", 8000)))
-                )
-            except (TypeError, ValueError):
-                current["semantic_embed_max_chars"] = 8000
-
-            current["memory_remote_selective"] = bool(settings.get("memory_remote_selective", True))
-            current["memory_full_remote"] = bool(settings.get("memory_full_remote", False))
-            current["memory_ollama_gate_enabled"] = bool(
-                settings.get("memory_ollama_gate_enabled", settings.get("memory_gemini_gate_enabled", True))
-            )
-            current["memory_gemini_gate_enabled"] = bool(
-                settings.get("memory_gemini_gate_enabled", True)
-            )
-            current["memory_gate_model"] = str(settings.get("memory_gate_model") or "").strip()
-            current["memory_ollama_model"] = str(settings.get("memory_ollama_model") or "").strip()
-            current["memory_ollama_url"] = str(settings.get("memory_ollama_url") or "").strip()
-            try:
-                current["memory_gate_retries"] = max(
-                    1, min(5, int(settings.get("memory_gate_retries", 3)))
-                )
-            except (TypeError, ValueError):
-                current["memory_gate_retries"] = 3
-            try:
-                current["memory_gate_timeout_sec"] = max(
-                    3.0, min(120.0, float(settings.get("memory_gate_timeout_sec", 20)))
-                )
-            except (TypeError, ValueError):
-                current["memory_gate_timeout_sec"] = 20.0
-            current["memory_salience_debug"] = bool(settings.get("memory_salience_debug", False))
 
             row = {"module_key": module_key, "values": current}
             r = _post_json(

@@ -37,7 +37,6 @@ import {
     Eye,
     EyeOff,
     ChevronDown,
-    Wallet,
 } from 'lucide-react';
 
 const TOOLS = [
@@ -66,8 +65,56 @@ const fieldClass =
 const rowClass =
     'relative z-[1] flex items-center justify-between gap-3 text-xs font-bold rounded-xl border border-white/15 bg-black/60 px-3 py-2.5 text-zinc-100 hover:border-white/25 transition-colors pointer-events-auto';
 
-const panelClass =
-    'rounded-[1.25rem] border border-white/15 bg-black/60 shadow-[0_12px_40px_rgba(0,0,0,0.45)]';
+/** Título dentro de um hub (sub-bloco) */
+const subsectionTitleClass =
+    'flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.18em] text-zinc-300/95 mb-3';
+
+/**
+ * Cartão de configurações no mesmo padrão visual do bloco «Cérebro · ATHENAS»:
+ * gradiente, header com título + badge opcional + descrição, corpo com padding.
+ */
+function SettingsHubCard({
+    icon: Icon,
+    title,
+    badge,
+    description,
+    gradientClass,
+    children,
+    headerRight,
+    rootClassName = '',
+    bodyClassName = 'px-4 py-4 sm:px-6 sm:py-5',
+}) {
+    return (
+        <div className={`flex min-h-0 flex-col ${rootClassName}`.trim()}>
+            <div
+                className={`flex min-h-0 flex-1 flex-col overflow-hidden rounded-2xl border border-white/[0.09] bg-gradient-to-br shadow-[0_16px_48px_rgba(0,0,0,0.35)] ${gradientClass}`}
+            >
+                <div className="border-b border-white/[0.06] bg-black/25 px-4 py-4 sm:px-6 sm:py-5">
+                    <div className="flex flex-wrap items-start justify-between gap-3">
+                        <div className="min-w-0 flex-1">
+                            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+                                <h3 className={`${sectionTitleClass} mb-0`}>
+                                    <Icon className="h-3.5 w-3.5 shrink-0" strokeWidth={2} />
+                                    {title}
+                                </h3>
+                                {badge ? (
+                                    <span className="inline-flex items-center rounded-full border border-white/15 bg-black/40 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-300/90">
+                                        {badge}
+                                    </span>
+                                ) : null}
+                            </div>
+                            {description ? (
+                                <p className="mt-3 max-w-2xl text-xs leading-relaxed text-zinc-400">{description}</p>
+                            ) : null}
+                        </div>
+                        {headerRight ? <div className="shrink-0">{headerRight}</div> : null}
+                    </div>
+                </div>
+                <div className={bodyClassName}>{children}</div>
+            </div>
+        </div>
+    );
+}
 
 function suggestLaunchAppIdFromPath(absPath) {
     const normalized = absPath.replace(/\\/g, '/');
@@ -541,10 +588,10 @@ function IntegrationHubModal({ open, onClose, title, subtitle, expandMode, child
 /**
  * Cartão do hub: resumo (estado / testes) + botão que abre modal com credenciais ou ajuda.
  */
-function IntegrationModalCard({ summary, credentials, modalTitle, modalSubtitle, expandMode = 'credentials' }) {
+function IntegrationModalCard({ summary, credentials, modalTitle, modalSubtitle, expandMode = 'credentials', buttonLabel }) {
     const [open, setOpen] = useState(false);
     const isInfoOnly = expandMode === 'info';
-    const btnLabel = isInfoOnly ? 'Como funcionam os webhooks' : 'Editar credenciais';
+    const btnLabel = buttonLabel || (isInfoOnly ? 'Como funcionam os webhooks' : 'Editar credenciais');
 
     return (
         <>
@@ -606,525 +653,11 @@ function SemanticHubCard({ icon: Icon, iconClass, title, subtitle, badge, childr
 }
 
 /**
- * Memória & contexto — entre Cérebro e Integrações (stack de rede).
+ * Memória & contexto — seção removida (legado Supabase chat embeddings).
+ * Agora a memória é 100% vault Obsidian local + pgvector para RAG.
  */
-function SemanticMemoryHubSection({
-    integrations,
-    credentialsMeta,
-    testResults,
-    testRunning,
-    semanticSearchEnabled,
-    semanticEmbedIndex,
-    semanticEmbedSenders,
-    semanticEmbedMinLength,
-    semanticEmbedMaxChars,
-    memoryRemoteSelective,
-    setMemoryRemoteSelective,
-    memoryOllamaGateEnabled,
-    setMemoryOllamaGateEnabled,
-    memoryFullRemote,
-    setMemoryFullRemote,
-    memoryGeminiGateEnabled,
-    setMemoryGeminiGateEnabled,
-    memoryGateModel,
-    setMemoryGateModel,
-    flushMemoryGateModel,
-    memoryOllamaModel,
-    setMemoryOllamaModel,
-    flushMemoryOllamaModel,
-    memoryOllamaUrl,
-    setMemoryOllamaUrl,
-    flushMemoryOllamaUrl,
-    memoryGateRetries,
-    setMemoryGateRetries,
-    flushMemoryGateRetries,
-    memoryGateTimeoutSec,
-    setMemoryGateTimeoutSec,
-    flushMemoryGateTimeoutSec,
-    memorySalienceDebug,
-    setMemorySalienceDebug,
-    chatStartupContextLimit,
-    setChatStartupContextLimit,
-    flushChatStartupContextLimit,
-    setSemanticSearch,
-    setSemanticIndex,
-    commitSemanticEmbedSenders,
-    setSemanticEmbedMinLength,
-    flushSemanticMinLength,
-    setSemanticEmbedMaxChars,
-    flushSemanticMaxChars,
-}) {
-    const supabaseOk = !!integrations?.supabase?.configured;
-    const geminiOk = !!credentialsMeta?.gemini_configured;
-    const stackReady = supabaseOk && geminiOk;
-    const searchLive = stackReady && semanticSearchEnabled;
-    const indexLive = stackReady && semanticSearchEnabled && semanticEmbedIndex;
-    const senderFlags = parseSemanticEmbedSenders(semanticEmbedSenders);
-
-    const toggleEmbedAll = (checked) => {
-        if (checked) commitSemanticEmbedSenders('*');
-        else commitSemanticEmbedSenders('User, ATHENAS');
-    };
-
-    const toggleEmbedUser = (checked) => {
-        if (senderFlags.all) return;
-        let user = checked;
-        let { athenas } = senderFlags;
-        if (!user && !athenas) user = true;
-        commitSemanticEmbedSenders(buildSemanticEmbedSenders({ all: false, user, athenas }));
-    };
-
-    const toggleEmbedAthenas = (checked) => {
-        if (senderFlags.all) return;
-        let athenas = checked;
-        let { user } = senderFlags;
-        if (!user && !athenas) athenas = true;
-        commitSemanticEmbedSenders(buildSemanticEmbedSenders({ all: false, user, athenas }));
-    };
-
-    const limitsBadge = `${semanticEmbedMinLength ?? '—'} · ${semanticEmbedMaxChars ?? '—'}`;
-    const liveLimitLabel = String(chatStartupContextLimit ?? '').trim() || '—';
-
-    return (
-        <section className="mt-4 mb-8 sm:mt-5 sm:mb-10">
-            <div className="overflow-hidden rounded-2xl border border-white/[0.09] bg-gradient-to-br from-violet-950/[0.18] via-fuchsia-950/14 to-zinc-950/90 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
-                <div className="border-b border-white/[0.06] bg-black/25 px-4 py-4 sm:px-6 sm:py-5">
-                    <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-                        <div className="min-w-0 flex-1">
-                            <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-                                <h3 className={`${sectionTitleClass} mb-0`}>
-                                    <Search className="h-3.5 w-3.5" strokeWidth={2} />
-                                    Memória &amp; contexto
-                                </h3>
-                                {stackReady ? (
-                                    <span className="inline-flex items-center rounded-full border border-violet-500/30 bg-black/40 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-violet-200/80">
-                                        Pipeline OK
-                                    </span>
-                                ) : (
-                                    <span className="inline-flex items-center rounded-full border border-zinc-600/40 bg-black/40 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-zinc-500">
-                                        Aguarda cérebro
-                                    </span>
-                                )}
-                            </div>
-                            <p className="mt-3 max-w-2xl text-xs leading-relaxed text-zinc-400">
-                                Embeddings com <strong className="font-medium text-zinc-300">Gemini</strong>, vetores no{' '}
-                                <strong className="font-medium text-zinc-300">Postgres (pgvector)</strong>, gravação em{' '}
-                                <code className="rounded bg-black/40 px-1.5 py-0.5 text-[11px] text-zinc-400">athena_settings.values</code>.
-                                O ficheiro <code className="text-zinc-500">.env</code> prévalece no arranque do Python quando a variável existir.
-                            </p>
-                        </div>
-                        <div className="flex shrink-0 flex-wrap items-center gap-2 lg:justify-end">
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[10px] text-zinc-400">
-                                <Database
-                                    className={`h-3.5 w-3.5 ${supabaseOk ? 'text-emerald-300/90' : 'text-zinc-500'}`}
-                                    strokeWidth={2}
-                                />
-                                <span className={supabaseOk ? 'text-zinc-200' : ''}>Supabase</span>
-                                <IntegrationStatusPill active={supabaseOk}>{supabaseOk ? 'OK' : 'Off'}</IntegrationStatusPill>
-                            </span>
-                            <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 bg-black/35 px-3 py-1.5 text-[10px] text-zinc-400">
-                                <Bot
-                                    className={`h-3.5 w-3.5 ${geminiOk ? 'text-sky-300/90' : 'text-zinc-500'}`}
-                                    strokeWidth={2}
-                                />
-                                <span className={geminiOk ? 'text-zinc-200' : ''}>Gemini</span>
-                                <IntegrationStatusPill active={geminiOk}>{geminiOk ? 'Chave' : 'Off'}</IntegrationStatusPill>
-                            </span>
-                        </div>
-                    </div>
-                    {!stackReady ? (
-                        <p className="mt-3 max-w-2xl rounded-lg border border-amber-500/20 bg-amber-950/20 px-3 py-2 text-[10px] leading-relaxed text-amber-100/90">
-                            Completa <strong className="font-medium text-amber-200/90">Cérebro · ATHENAS</strong> acima (URL Supabase + chave
-                            Gemini) para usar busca semântica e indexação.
-                        </p>
-                    ) : null}
-                </div>
-
-                <div className="space-y-8 px-4 py-5 sm:px-6 sm:py-6">
-                    <div>
-                        <div className="mb-3 flex flex-wrap items-end justify-between gap-2 border-b border-white/[0.07] pb-2">
-                            <div>
-                                <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">1 · Índice &amp; busca</p>
-                                <p className="mt-0.5 text-[11px] text-zinc-400">
-                                    Busca, indexação, remetentes, limites de texto e mensagens no arranque Live.
-                                </p>
-                            </div>
-                        </div>
-                        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-5 xl:gap-5">
-                            <SemanticHubCard
-                    icon={Search}
-                    iconClass="border-cyan-500/30 text-cyan-200"
-                    title="Busca no histórico"
-                    subtitle="Similaridade semântica"
-                    badge={<IntegrationStatusPill active={searchLive}>{searchLive ? 'Ativo' : 'Off'}</IntegrationStatusPill>}
-                >
-                    <p className="mb-3 line-clamp-3 text-[10px] leading-snug text-zinc-400">
-                        Consultas por significado às mensagens antigas. Predefinição:{' '}
-                        <strong className="font-normal text-zinc-400">ligado</strong>.
-                    </p>
-                    <div className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5">
-                        <span className="text-[11px] text-zinc-100">Usar busca semântica</span>
-                        <SettingsSwitch
-                            checked={semanticSearchEnabled}
-                            onCheckedChange={setSemanticSearch}
-                            ariaLabel="Alternar busca semântica no histórico"
-                        />
-                    </div>
-                </SemanticHubCard>
-
-                <SemanticHubCard
-                    icon={Layers}
-                    iconClass="border-violet-500/30 text-violet-200"
-                    title="Indexação"
-                    subtitle="Embeddings novas msgs"
-                    badge={<IntegrationStatusPill active={indexLive}>{indexLive ? 'A indexar' : 'Pausado'}</IntegrationStatusPill>}
-                >
-                    <p className="mb-3 line-clamp-3 text-[10px] leading-snug text-zinc-400">
-                        Gera vetores ao guardar mensagens (usa API). Predefinição:{' '}
-                        <strong className="font-normal text-zinc-400">ligado</strong>.
-                    </p>
-                    <div className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5">
-                        <span className="text-[11px] text-zinc-100">Indexar automaticamente</span>
-                        <SettingsSwitch
-                            checked={semanticEmbedIndex}
-                            onCheckedChange={setSemanticIndex}
-                            ariaLabel="Alternar indexação por embeddings"
-                        />
-                    </div>
-                </SemanticHubCard>
-
-                <SemanticHubCard
-                    icon={Users}
-                    iconClass="border-amber-500/30 text-amber-200"
-                    title="Remetentes"
-                    subtitle="Quem entra no índice"
-                    badge={
-                        <span className="max-w-[7rem] truncate rounded-full border border-white/10 bg-black/40 px-2 py-0.5 font-mono text-[9px] text-zinc-400">
-                            {semanticSendersBadgeLabel(semanticEmbedSenders)}
-                        </span>
-                    }
-                >
-                    <p className="mb-2.5 text-[10px] leading-snug text-zinc-400">
-                        Escolhe quem indexar para busca semântica. «Todas» equivale a{' '}
-                        <code className="text-zinc-500">*</code> no servidor.
-                    </p>
-                    <div className="flex flex-col gap-2" style={{ WebkitAppRegion: 'no-drag' }}>
-                        <label className="flex cursor-pointer items-center gap-2.5 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2 transition-colors hover:border-white/10">
-                            <input
-                                type="checkbox"
-                                checked={senderFlags.all}
-                                onChange={(e) => toggleEmbedAll(e.target.checked)}
-                                className="h-3.5 w-3.5 shrink-0 rounded border-white/20 bg-black/50 text-amber-400 focus:ring-amber-500/40"
-                            />
-                            <span className="text-[11px] text-zinc-100">Todas as mensagens</span>
-                        </label>
-                        <label
-                            className={`flex cursor-pointer items-center gap-2.5 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2 transition-colors hover:border-white/10 ${senderFlags.all ? 'opacity-45' : ''}`}
-                        >
-                            <input
-                                type="checkbox"
-                                checked={senderFlags.user}
-                                disabled={senderFlags.all}
-                                onChange={(e) => toggleEmbedUser(e.target.checked)}
-                                className="h-3.5 w-3.5 shrink-0 rounded border-white/20 bg-black/50 text-amber-400 focus:ring-amber-500/40 disabled:cursor-not-allowed"
-                            />
-                            <span className="text-[11px] text-zinc-100">Tu (User)</span>
-                        </label>
-                        <label
-                            className={`flex cursor-pointer items-center gap-2.5 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2 transition-colors hover:border-white/10 ${senderFlags.all ? 'opacity-45' : ''}`}
-                        >
-                            <input
-                                type="checkbox"
-                                checked={senderFlags.athenas}
-                                disabled={senderFlags.all}
-                                onChange={(e) => toggleEmbedAthenas(e.target.checked)}
-                                className="h-3.5 w-3.5 shrink-0 rounded border-white/20 bg-black/50 text-amber-400 focus:ring-amber-500/40 disabled:cursor-not-allowed"
-                            />
-                            <span className="text-[11px] text-zinc-100">ATHENAS (assistente)</span>
-                        </label>
-                    </div>
-                </SemanticHubCard>
-
-                <SemanticHubCard
-                    icon={SlidersHorizontal}
-                    iconClass="border-rose-500/25 text-rose-200"
-                    title="Limites"
-                    subtitle="Tamanho do texto"
-                    badge={
-                        <span className="rounded-full border border-white/10 bg-black/40 px-2 py-0.5 font-mono text-[9px] text-zinc-400">
-                            {limitsBadge}
-                        </span>
-                    }
-                >
-                    <div className="space-y-2.5">
-                        <div>
-                            <label className="mb-1 block text-[9px] uppercase tracking-wider text-zinc-400">
-                                Mín. caracteres <span className="text-zinc-500">(0–500)</span>
-                            </label>
-                            <input
-                                type="number"
-                                min={0}
-                                max={500}
-                                value={semanticEmbedMinLength}
-                                onChange={(e) => setSemanticEmbedMinLength(e.target.value)}
-                                onBlur={flushSemanticMinLength}
-                                className={fieldClass}
-                                style={{ WebkitAppRegion: 'no-drag' }}
-                            />
-                        </div>
-                        <div>
-                            <label className="mb-1 block text-[9px] uppercase tracking-wider text-zinc-400">
-                                Máx. por embedding <span className="text-zinc-500">(200–8000)</span>
-                            </label>
-                            <input
-                                type="number"
-                                min={200}
-                                max={8000}
-                                value={semanticEmbedMaxChars}
-                                onChange={(e) => setSemanticEmbedMaxChars(e.target.value)}
-                                onBlur={flushSemanticMaxChars}
-                                className={fieldClass}
-                                style={{ WebkitAppRegion: 'no-drag' }}
-                            />
-                        </div>
-                    </div>
-                            </SemanticHubCard>
-
-                            <SemanticHubCard
-                                icon={History}
-                                iconClass="border-teal-500/30 text-teal-200"
-                                title="Contexto ao ligar (Live)"
-                                subtitle="Arranque da sessão"
-                                badge={
-                                    <span className="rounded-full border border-white/10 bg-black/40 px-2 py-0.5 font-mono text-[9px] text-zinc-400">
-                                        N: {liveLimitLabel}
-                                    </span>
-                                }
-                            >
-                                <p className="mb-2.5 text-[10px] leading-snug text-zinc-400">
-                                    Mensagens recentes injectadas antes do Gemini Live (e no reconnect). Intervalo 10–500. Equivale a{' '}
-                                    <code className="text-zinc-500">ORBITAL_CHAT_STARTUP_CONTEXT_LIMIT</code>.
-                                </p>
-                                <label className="mb-1 block text-[9px] uppercase tracking-wider text-zinc-400">
-                                    Últimas N mensagens
-                                </label>
-                                <input
-                                    type="number"
-                                    min={10}
-                                    max={500}
-                                    value={chatStartupContextLimit}
-                                    onChange={(e) => setChatStartupContextLimit(e.target.value)}
-                                    onBlur={flushChatStartupContextLimit}
-                                    className={fieldClass}
-                                    style={{ WebkitAppRegion: 'no-drag' }}
-                                />
-                            </SemanticHubCard>
-                        </div>
-                    </div>
-
-                    <div>
-                        <div className="mb-3 border-b border-white/[0.07] pb-2">
-                            <p className="text-[10px] font-bold uppercase tracking-[0.16em] text-zinc-500">
-                                2 · Portão Ollama &amp; memória remota
-                            </p>
-                            <p className="mt-0.5 text-[11px] text-zinc-400">
-                                O que sobe ao Supabase, compat legado, rede local do Ollama e modelo do classificador.
-                            </p>
-                        </div>
-                        <div className="grid grid-cols-1 gap-4 lg:grid-cols-3 lg:gap-5">
-                            <SemanticHubCard
-                                icon={Sparkles}
-                                iconClass="border-amber-400/35 text-amber-200"
-                                title="Política &amp; filtros"
-                                subtitle="Supabase + gates"
-                                badge={
-                                    <IntegrationStatusPill active={memoryRemoteSelective && geminiOk}>
-                                        {memoryRemoteSelective
-                                            ? memoryOllamaGateEnabled && memoryGeminiGateEnabled
-                                                ? 'IA'
-                                                : 'Bypass'
-                                            : 'Tudo remoto'}
-                                    </IntegrationStatusPill>
-                                }
-                            >
-                                <p className="mb-3 text-[10px] leading-snug text-zinc-400">
-                                    <code className="text-zinc-500">chat_history.jsonl</code> guarda tudo localmente. «Filtrar» + Ollama
-                                    escolhem o que vai ao remoto para embeddings.
-                                </p>
-                                <div className="flex flex-col gap-2.5">
-                                    <div className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5">
-                                        <span className="text-[11px] text-zinc-100">Filtrar envio ao Supabase</span>
-                                        <SettingsSwitch
-                                            checked={memoryRemoteSelective}
-                                            onCheckedChange={setMemoryRemoteSelective}
-                                            ariaLabel="Filtrar mensagens enviadas ao Supabase"
-                                        />
-                                    </div>
-                                    <div
-                                        className={`flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5 ${!memoryRemoteSelective ? 'opacity-45' : ''}`}
-                                    >
-                                        <span className="text-[11px] text-zinc-100">Decidir com Ollama</span>
-                                        <SettingsSwitch
-                                            checked={memoryOllamaGateEnabled && memoryRemoteSelective}
-                                            disabled={!memoryRemoteSelective}
-                                            onCheckedChange={(v) => memoryRemoteSelective && setMemoryOllamaGateEnabled(!!v)}
-                                            ariaLabel="ORBITAL_MEMORY_OLLAMA_GATE"
-                                        />
-                                    </div>
-                                    <div className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5">
-                                        <span className="text-[11px] text-zinc-100">Compat legado Gemini gate</span>
-                                        <SettingsSwitch
-                                            checked={memoryGeminiGateEnabled}
-                                            onCheckedChange={setMemoryGeminiGateEnabled}
-                                            ariaLabel="ORBITAL_MEMORY_GEMINI_GATE"
-                                        />
-                                    </div>
-                                    <div className="flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5">
-                                        <span className="text-[11px] leading-snug text-zinc-100">
-                                            Enviar tudo ao remoto <span className="text-zinc-500">(sem filtro)</span>
-                                        </span>
-                                        <SettingsSwitch
-                                            checked={memoryFullRemote}
-                                            onCheckedChange={setMemoryFullRemote}
-                                            ariaLabel="ORBITAL_MEMORY_FULL_REMOTE"
-                                        />
-                                    </div>
-                                    <div
-                                        className={`flex items-center justify-between gap-3 rounded-lg border border-white/[0.06] bg-black/25 px-3 py-2.5 ${!memoryRemoteSelective || !memoryOllamaGateEnabled ? 'opacity-45' : ''}`}
-                                    >
-                                        <span className="text-[11px] text-zinc-100">Logs de decisão (debug)</span>
-                                        <SettingsSwitch
-                                            checked={memorySalienceDebug}
-                                            onCheckedChange={setMemorySalienceDebug}
-                                            ariaLabel="ORBITAL_MEMORY_SALIENCE_DEBUG"
-                                        />
-                                    </div>
-                                </div>
-                            </SemanticHubCard>
-
-                            <SemanticHubCard
-                                icon={Bot}
-                                iconClass="border-sky-500/30 text-sky-200"
-                                title="Modelo do gate"
-                                subtitle="Ollama classify"
-                                badge={
-                                    <span className="max-w-[6rem] truncate rounded-full border border-white/10 bg-black/40 px-2 py-0.5 font-mono text-[9px] text-zinc-400">
-                                        {(memoryGateModel || memoryOllamaModel || 'def').slice(0, 12)}
-                                    </span>
-                                }
-                            >
-                                <p className="mb-2.5 text-[10px] leading-snug text-zinc-400">
-                                    Vazio usa o pré-definido do código (ex. <code className="text-zinc-500">qwen2.5:7b</code>). Equivale a{' '}
-                                    <code className="text-zinc-500">ORBITAL_MEMORY_GATE_MODEL</code> /{' '}
-                                    <code className="text-zinc-500">ORBITAL_MEMORY_OLLAMA_MODEL</code>.
-                                </p>
-                                <div className="space-y-2.5">
-                                    <div>
-                                        <label className="mb-1 block text-[9px] uppercase tracking-wider text-zinc-400">
-                                            Modelo principal
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={memoryGateModel}
-                                            onChange={(e) => setMemoryGateModel(e.target.value)}
-                                            onBlur={flushMemoryGateModel}
-                                            className={fieldClass}
-                                            placeholder="ex.: qwen2.5:7b"
-                                            style={{ WebkitAppRegion: 'no-drag' }}
-                                        />
-                                    </div>
-                                    <div>
-                                        <label className="mb-1 block text-[9px] uppercase tracking-wider text-zinc-400">
-                                            Alias (compat)
-                                        </label>
-                                        <input
-                                            type="text"
-                                            value={memoryOllamaModel}
-                                            onChange={(e) => setMemoryOllamaModel(e.target.value)}
-                                            onBlur={flushMemoryOllamaModel}
-                                            className={fieldClass}
-                                            placeholder="opcional"
-                                            style={{ WebkitAppRegion: 'no-drag' }}
-                                        />
-                                    </div>
-                                </div>
-                            </SemanticHubCard>
-
-                            <SemanticHubCard
-                                icon={Database}
-                                iconClass="border-emerald-500/28 text-emerald-200"
-                                title="Ligação Ollama"
-                                subtitle="Rede &amp; timeouts"
-                                badge={
-                                    <span className="rounded-full border border-white/10 bg-black/40 px-2 py-0.5 font-mono text-[9px] text-zinc-400">
-                                        {memoryGateRetries}× · {memoryGateTimeoutSec}s
-                                    </span>
-                                }
-                            >
-                                <p className="mb-2.5 text-[10px] leading-snug text-zinc-400">
-                                    Endpoint local e robustez das chamadas ao classificador.{' '}
-                                    <code className="text-zinc-500">ORBITAL_MEMORY_OLLAMA_URL</code>, retries e timeout.
-                                </p>
-                                <div className="space-y-2.5">
-                                    <div>
-                                        <label className="mb-1 block text-[9px] uppercase tracking-wider text-zinc-400">URL base</label>
-                                        <input
-                                            type="text"
-                                            value={memoryOllamaUrl}
-                                            onChange={(e) => setMemoryOllamaUrl(e.target.value)}
-                                            onBlur={flushMemoryOllamaUrl}
-                                            className={fieldClass}
-                                            placeholder="http://127.0.0.1:11434"
-                                            style={{ WebkitAppRegion: 'no-drag' }}
-                                        />
-                                    </div>
-                                    <div className="grid grid-cols-2 gap-2">
-                                        <div>
-                                            <label className="mb-1 block text-[9px] uppercase tracking-wider text-zinc-400">Retries 1–5</label>
-                                            <input
-                                                type="number"
-                                                min={1}
-                                                max={5}
-                                                value={memoryGateRetries}
-                                                onChange={(e) => setMemoryGateRetries(e.target.value)}
-                                                onBlur={flushMemoryGateRetries}
-                                                className={fieldClass}
-                                                style={{ WebkitAppRegion: 'no-drag' }}
-                                            />
-                                        </div>
-                                        <div>
-                                            <label className="mb-1 block text-[9px] uppercase tracking-wider text-zinc-400">Timeout s</label>
-                                            <input
-                                                type="number"
-                                                min={3}
-                                                max={120}
-                                                step="0.5"
-                                                value={memoryGateTimeoutSec}
-                                                onChange={(e) => setMemoryGateTimeoutSec(e.target.value)}
-                                                onBlur={flushMemoryGateTimeoutSec}
-                                                className={fieldClass}
-                                                style={{ WebkitAppRegion: 'no-drag' }}
-                                            />
-                                        </div>
-                                    </div>
-                                    <IntegrationProbeToggle
-                                        data={testResults?.ollama}
-                                        webhookMode={false}
-                                        testRunning={testRunning}
-                                    />
-                                </div>
-                            </SemanticHubCard>
-                        </div>
-                    </div>
-
-                    <p className="max-w-3xl rounded-xl border border-white/[0.07] bg-black/30 px-3 py-2.5 text-[10px] leading-relaxed text-zinc-500">
-                        <strong className="font-medium text-zinc-400">.env sobrepõe</strong> valores gravados no Supabase quando a variável
-                        existe no arranque do Python (<code className="text-zinc-400">ORBITAL_*</code>).
-                    </p>
-                </div>
-            </div>
-        </section>
-    );
+function SemanticMemoryHubSection() {
+    return null;
 }
 
 function useServerCredentialsSave(socket) {
@@ -1181,7 +714,7 @@ function BrainAndIntegrationsPanels({ socket, children, ...rest }) {
 }
 
 /**
- * Núcleo (cérebro): Supabase + Gemini — não são integrações opcionais.
+ * Núcleo (cérebro): Obsidian + Supabase + Gemini — não são integrações opcionais.
  */
 function BrainAthenasSection({
     integrations,
@@ -1225,7 +758,7 @@ function BrainAthenasSection({
     }, [meta]);
 
     const brainReadyCount =
-        integrations && meta ? [!!supabase?.configured, !!meta.gemini_configured].filter(Boolean).length : 0;
+        integrations && meta ? [true, !!supabase?.configured, !!meta.gemini_configured].filter(Boolean).length : 0;
 
     return (
         <section className="mb-6 sm:mb-8">
@@ -1239,18 +772,19 @@ function BrainAthenasSection({
                             </h3>
                             {integrations && meta ? (
                                 <span className="inline-flex items-center rounded-full border border-fuchsia-500/30 bg-black/40 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-fuchsia-200/80">
-                                    {brainReadyCount}/2 núcleo
+                                    {brainReadyCount}/3 núcleo
                                 </span>
                             ) : null}
                         </div>
                         <p className="mt-3 max-w-2xl text-xs leading-relaxed text-zinc-400">
+                            O núcleo é composto por <strong className="font-medium text-zinc-300">Obsidian</strong>,{' '}
                             <strong className="font-medium text-zinc-300">Supabase</strong> e{' '}
-                            <strong className="font-medium text-zinc-300">Gemini (ATHENAS)</strong> são a base do sistema — memória remota,
-                            definições, ferramentas e voz/Live. Isto não é uma «integração» ao estilo Comfy ou n8n. Credenciais em{' '}
+                            <strong className="font-medium text-zinc-300">Gemini (ATHENAS)</strong>. Este bloco reúne o estado dos três e os
+                            atalhos principais de operação. Credenciais continuam em{' '}
                             <code className="rounded bg-black/40 px-1.5 py-0.5 text-[11px] text-zinc-400">
                                 data/local_credentials.json
                             </code>
-                            . O teste HTTP ao Supabase continua disponível no cartão (e no botão «Testar ligações» na secção de integrações).
+                            ; o teste HTTP do Supabase permanece neste cartão e no botão «Testar ligações».
                         </p>
                     </div>
                 </div>
@@ -1266,7 +800,7 @@ function BrainAthenasSection({
                             OrbitalSync e reinicia o Python.
                         </div>
                     ) : (
-                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5">
+                        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-3">
                             <IntegrationModalCard
                                 modalTitle="Supabase"
                                 modalSubtitle="Credenciais em data/local_credentials.json"
@@ -1515,6 +1049,64 @@ function BrainAthenasSection({
                                     )
                                 }
                             />
+
+                            <IntegrationModalCard
+                                modalTitle="Obsidian (Vault de memória)"
+                                modalSubtitle="Vault local e override por .env"
+                                buttonLabel="Ver caminhos"
+                                summary={
+                                    <>
+                                        <div className="mb-2 flex items-start justify-between gap-2">
+                                            <div className="flex min-w-0 items-center gap-2">
+                                                <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-200">
+                                                    <FolderOpen className="h-4 w-4" strokeWidth={2} />
+                                                </span>
+                                                <div className="min-w-0">
+                                                    <div className="text-sm font-semibold leading-tight text-zinc-100">
+                                                        Obsidian Vault
+                                                    </div>
+                                                    <div className="text-[10px] uppercase tracking-wider text-zinc-500">
+                                                        Memória local
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <IntegrationStatusPill active>
+                                                Ativo
+                                            </IntegrationStatusPill>
+                                        </div>
+                                        <p className="line-clamp-3 text-[11px] leading-relaxed text-zinc-400">
+                                            Cérebro local da OrbitalSync. Caminho padrão no projeto:{' '}
+                                            <code className="rounded bg-black/30 px-1 text-zinc-500">data/memory/OrbitalSync</code>.
+                                        </p>
+                                        <p className="mt-2 text-[10px] leading-relaxed text-zinc-500">
+                                            Para trocar a pasta do vault, define{' '}
+                                            <code className="rounded bg-black/30 px-1 text-zinc-400">ORBITAL_BRAIN_PATH</code> no{' '}
+                                            <code className="text-zinc-400">.env</code>.
+                                        </p>
+                                    </>
+                                }
+                                credentials={
+                                    <div className="flex flex-col gap-2.5 text-xs text-zinc-300">
+                                        <p className="text-[11px] leading-relaxed text-zinc-400">
+                                            <strong className="font-semibold text-zinc-200">Padrão do projeto</strong>
+                                        </p>
+                                        <code className="rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-[11px] text-zinc-200">
+                                            data/memory/OrbitalSync
+                                        </code>
+                                        <p className="text-[11px] leading-relaxed text-zinc-400">
+                                            <strong className="font-semibold text-zinc-200">Override opcional</strong> no{' '}
+                                            <code className="text-zinc-300">.env</code>:
+                                        </p>
+                                        <code className="rounded-lg border border-white/10 bg-black/35 px-3 py-2 text-[11px] text-zinc-200">
+                                            ORBITAL_BRAIN_PATH=C:/caminho/para/seu/vault
+                                        </code>
+                                        <p className="text-[10px] leading-relaxed text-zinc-500">
+                                            O backend usa esse valor no arranque; se não existir, cai automaticamente no caminho padrão do
+                                            projeto.
+                                        </p>
+                                    </div>
+                                }
+                            />
                         </div>
                     )}
                 </div>
@@ -1524,7 +1116,7 @@ function BrainAthenasSection({
 }
 
 /**
- * Integrações opcionais: ComfyUI, n8n/webhooks, Finance (Pierre).
+ * Integrações opcionais: ComfyUI, n8n/webhooks.
  */
 function IntegrationsHubSection({
     integrations,
@@ -1544,23 +1136,16 @@ function IntegrationsHubSection({
 
     const [comfyUrl, setComfyUrl] = useState('http://127.0.0.1:2000');
     const [comfyWorkflow, setComfyWorkflow] = useState('');
-    const [pierreKey, setPierreKey] = useState('');
 
     useEffect(() => {
         if (!meta || typeof meta !== 'object') return;
         setComfyUrl(meta.comfyui_base_url || 'http://127.0.0.1:2000');
         setComfyWorkflow(meta.comfyui_workflow_file || '');
-        const cs = meta.credentials_secrets;
-        if (cs && typeof cs === 'object') {
-            setPierreKey(typeof cs.pierre_api_key === 'string' ? cs.pierre_api_key : '');
-        } else {
-            setPierreKey('');
-        }
     }, [meta]);
 
     const integrationsReadyCount =
         integrations && meta
-            ? [!!comfy?.workflow_ready, (n8n?.hooks_count ?? 0) > 0, !!meta.pierre_configured].filter(Boolean).length
+            ? [!!comfy?.workflow_ready, (n8n?.hooks_count ?? 0) > 0].filter(Boolean).length
             : 0;
 
     return (
@@ -1576,16 +1161,14 @@ function IntegrationsHubSection({
                                 </h3>
                                 {integrations && meta ? (
                                     <span className="inline-flex items-center rounded-full border border-teal-500/25 bg-black/40 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-teal-200/85">
-                                        {integrationsReadyCount}/3 ligadas
+                                        {integrationsReadyCount}/2 ligadas
                                     </span>
                                 ) : null}
                             </div>
                             <p className="mt-3 max-w-2xl text-xs leading-relaxed text-zinc-400">
-                                Serviços à volta do núcleo: imagens (ComfyUI), automações HTTP (n8n / webhooks) e financeiro opcional
-                                (Pierre). <strong className="font-medium text-zinc-300">Testar ligações</strong> cobre Supabase, ComfyUI,
-                                webhooks e Ollama <span className="text-zinc-500">(URL em memória ou</span>{' '}
-                                <code className="text-zinc-500">ORBITAL_MEMORY_OLLAMA_URL</code>
-                                <span className="text-zinc-500">)</span> (o Supabase também está no cérebro).
+                                Serviços à volta do núcleo: imagens (ComfyUI) e automações HTTP (n8n / webhooks).{' '}
+                                <strong className="font-medium text-zinc-300">Testar ligações</strong> cobre Supabase, ComfyUI
+                                e webhooks (o Supabase também está no cérebro).
                             </p>
                         </div>
                         {integrationsReady && integrations ? (
@@ -1818,87 +1401,6 @@ function IntegrationsHubSection({
                                     }
                                 />
 
-                                <IntegrationModalCard
-                                    modalTitle="Finance (Pierre)"
-                                    modalSubtitle="PIERRE_API_KEY (local_credentials.json)"
-                                    summary={
-                                        <>
-                                            <div className="mb-2 flex items-start justify-between gap-2">
-                                                <div className="flex min-w-0 items-center gap-2">
-                                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-lime-500/30 bg-lime-500/10 text-lime-200">
-                                                        <Wallet className="h-4 w-4" strokeWidth={2} />
-                                                    </span>
-                                                    <div className="min-w-0">
-                                                        <div className="text-sm font-semibold leading-tight text-zinc-100">
-                                                            Finance · Pierre
-                                                        </div>
-                                                        <div className="text-[10px] uppercase tracking-wider text-zinc-500">Opcional</div>
-                                                    </div>
-                                                </div>
-                                                <IntegrationStatusPill active={!!meta?.pierre_configured}>
-                                                    {meta?.pierre_configured ? 'Token OK' : 'Sem token'}
-                                                </IntegrationStatusPill>
-                                            </div>
-                                            <p className="line-clamp-3 text-[11px] leading-relaxed text-zinc-400">
-                                                Integração financeira opcional. URL e timeouts definem-se no{' '}
-                                                <code className="rounded bg-black/30 px-1 text-zinc-500">.env</code> (
-                                                <code className="text-zinc-500">PIERRE_BASE_URL</code>, etc.).
-                                            </p>
-                                        </>
-                                    }
-                                    credentials={
-                                        meta ? (
-                                            <div className="flex flex-col gap-2.5">
-                                                {meta.secrets_visible_in_ui ? (
-                                                    <p className="rounded-lg border border-amber-500/25 bg-amber-950/25 px-2.5 py-1.5 text-[10px] leading-relaxed text-amber-100/90">
-                                                        <code className="text-amber-200/85">ORBITAL_EXPOSE_SECRETS_IN_SETTINGS_UI</code> ligado —
-                                                        token enviado ao abrir.
-                                                    </p>
-                                                ) : (
-                                                    <p className="text-[10px] leading-relaxed text-zinc-500">
-                                                        Mesmo fluxo que as outras chaves: pontinhos + olho para revelar localmente.
-                                                    </p>
-                                                )}
-                                                <SecretCredentialField
-                                                    label="Pierre — API key"
-                                                    value={pierreKey}
-                                                    setValue={setPierreKey}
-                                                    placeholder={
-                                                        meta.pierre_configured
-                                                            ? 'Deixar vazio mantém o token já guardado no PC'
-                                                            : 'Colar API key Pierre'
-                                                    }
-                                                    configured={!!meta.pierre_configured}
-                                                    secretLength={meta.pierre_api_key_length ?? 0}
-                                                    field="pierre_api_key"
-                                                    socket={socket}
-                                                    disabled={credSaving || !meta}
-                                                />
-                                                <p className="text-[10px] leading-relaxed text-zinc-500">
-                                                    <code className="text-zinc-400">PIERRE_BASE_URL</code> e restantes{' '}
-                                                    <code className="text-zinc-400">PIERRE_*</code> no ficheiro{' '}
-                                                    <code className="text-zinc-400">.env</code> (secção Finance no mapa abaixo).
-                                                </p>
-                                                <button
-                                                    type="button"
-                                                    onClick={() => savePartial({ pierre_api_key: pierreKey.trim() })}
-                                                    disabled={credSaving || !meta}
-                                                    className="mt-1 inline-flex items-center justify-center gap-2 rounded-xl border border-lime-500/35 bg-lime-500/12 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-lime-100 transition-colors hover:bg-lime-500/22 disabled:cursor-not-allowed disabled:opacity-45"
-                                                    style={{ WebkitAppRegion: 'no-drag' }}
-                                                >
-                                                    {credSaving ? (
-                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                                                    ) : (
-                                                        <Save className="h-3.5 w-3.5" aria-hidden />
-                                                    )}
-                                                    Guardar Pierre
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <p className="text-xs text-zinc-400">A carregar metadados…</p>
-                                        )
-                                    }
-                                />
                             </div>
                         </>
                     )}
@@ -2060,6 +1562,13 @@ function EnvReferenceSection() {
             ],
         },
         {
+            title: 'Cérebro local (Obsidian)',
+            icon: Brain,
+            keys: [
+                ['ORBITAL_BRAIN_PATH', 'Override da pasta do vault. Padrão: data/memory/OrbitalSync.'],
+            ],
+        },
+        {
             title: 'Supabase',
             icon: Database,
             keys: [
@@ -2068,33 +1577,6 @@ function EnvReferenceSection() {
                 ['SUPABASE_ANON_KEY', 'Alternativa com políticas RLS adequadas.'],
                 ['SUPABASE_CONFIG_ENABLED', 'Liga/desliga uso de config remota.'],
                 ['ATHENA_SETTINGS_MODULE_KEY', 'module_key em athena_settings (default: athena).'],
-            ],
-        },
-        {
-            title: 'Memória remota (Ollama gate)',
-            icon: Brain,
-            keys: [
-                ['ORBITAL_MEMORY_OLLAMA_GATE', 'Liga/desliga classificador seletivo de memória.'],
-                ['ORBITAL_MEMORY_GEMINI_GATE', 'Compat legado (se off, também desliga o gate).'],
-                ['ORBITAL_MEMORY_FULL_REMOTE', 'Se on, envia tudo para remoto (sem filtro).'],
-                ['ORBITAL_MEMORY_GATE_MODEL', 'Modelo Ollama usado no gate (ex.: qwen2.5:7b).'],
-                ['ORBITAL_MEMORY_OLLAMA_MODEL', 'Alias opcional de modelo (compat).'],
-                ['ORBITAL_MEMORY_OLLAMA_URL', 'Endpoint local do Ollama.'],
-                ['ORBITAL_MEMORY_GATE_RETRIES', 'Tentativas em falha de chamada local.'],
-                ['ORBITAL_MEMORY_GATE_TIMEOUT_SEC', 'Timeout por requisição do gate.'],
-                ['ORBITAL_MEMORY_SALIENCE_DEBUG', 'Logs detalhados de decisão de memória.'],
-            ],
-        },
-        {
-            title: 'Embeddings e busca semântica',
-            icon: Search,
-            keys: [
-                ['ORBITAL_CHAT_SEMANTIC', 'Liga/desliga busca semântica no histórico.'],
-                ['ORBITAL_EMBED_INDEX', 'Liga indexação automática por embeddings.'],
-                ['ORBITAL_EMBED_SENDERS', 'Quem indexar: * ou User, ATHENAS.'],
-                ['ORBITAL_EMBED_MIN_LENGTH', 'Mínimo de caracteres para indexar.'],
-                ['ORBITAL_EMBED_MAX_CHARS', 'Máximo de caracteres por embedding.'],
-                ['ORBITAL_CHAT_STARTUP_CONTEXT_LIMIT', 'Mensagens usadas no startup/reconnect.'],
             ],
         },
         {
@@ -2110,17 +1592,9 @@ function EnvReferenceSection() {
             ],
         },
         {
-            title: 'Finance / extras',
+            title: 'Docker / extras',
             icon: FileText,
             keys: [
-                ['PIERRE_API_KEY', 'Token da integração Pierre (opcional).'],
-                ['PIERRE_BASE_URL', 'URL base da API Pierre.'],
-                ['PIERRE_TIMEOUT_SECONDS', 'Timeout das chamadas padrão.'],
-                ['PIERRE_MANUAL_UPDATE_TIMEOUT_SECONDS', 'Timeout de atualizações manuais.'],
-                ['PIERRE_POST_SYNC_WAIT_SECONDS', 'Espera base após sync.'],
-                ['PIERRE_POST_SYNC_EXTRA_WAIT_INPROGRESS', 'Espera extra se houver itens em progresso.'],
-                ['PIERRE_POST_SYNC_WAIT_MAX', 'Limite máximo de espera pós-sync.'],
-                ['PIERRE_FOLLOW_UP_SNAPSHOT_SECONDS', 'Delay para snapshot de confirmação.'],
                 ['ORBITAL_SKIP_DOCKER_START', 'Não executa docker start no arranque do Electron.'],
                 ['ORBITAL_DOCKER_CONTAINERS', 'Nomes Docker (vírgula), ex.: n8n. Default: n8n.'],
                 ['ORBITAL_START_DOCKER_DESKTOP', 'Windows: 0 = não abrir Docker Desktop se o daemon estiver parado.'],
@@ -2254,22 +1728,6 @@ const SettingsWindow = ({
 }) => {
     const [permissions, setPermissions] = useState({});
     const [faceAuthEnabled, setFaceAuthEnabled] = useState(false);
-    const [semanticSearchEnabled, setSemanticSearchEnabled] = useState(true);
-    const [semanticEmbedIndex, setSemanticEmbedIndex] = useState(true);
-    const [semanticEmbedSenders, setSemanticEmbedSenders] = useState('User, ATHENAS');
-    const [semanticEmbedMinLength, setSemanticEmbedMinLength] = useState('24');
-    const [semanticEmbedMaxChars, setSemanticEmbedMaxChars] = useState('8000');
-    const [chatStartupContextLimit, setChatStartupContextLimit] = useState('100');
-    const [memoryRemoteSelective, setMemoryRemoteSelectiveState] = useState(true);
-    const [memoryOllamaGateEnabled, setMemoryOllamaGateState] = useState(true);
-    const [memoryFullRemote, setMemoryFullRemoteState] = useState(false);
-    const [memoryGeminiGateEnabled, setMemoryGeminiGateEnabledState] = useState(true);
-    const [memoryGateModel, setMemoryGateModel] = useState('');
-    const [memoryOllamaModel, setMemoryOllamaModel] = useState('');
-    const [memoryOllamaUrl, setMemoryOllamaUrl] = useState('');
-    const [memoryGateRetries, setMemoryGateRetries] = useState('3');
-    const [memoryGateTimeoutSec, setMemoryGateTimeoutSec] = useState('20');
-    const [memorySalienceDebug, setMemorySalienceDebugState] = useState(false);
     const [launchAppCatalog, setLaunchAppCatalog] = useState([]);
     const [launchAppsConfigPath, setLaunchAppsConfigPath] = useState('');
     const [pathCopied, setPathCopied] = useState(false);
@@ -2390,71 +1848,6 @@ const SettingsWindow = ({
                 setFaceAuthEnabled(settings.face_auth_enabled);
                 localStorage.setItem('face_auth_enabled', settings.face_auth_enabled);
             }
-            if (typeof settings.semantic_search_enabled !== 'undefined') {
-                setSemanticSearchEnabled(!!settings.semantic_search_enabled);
-            }
-            if (typeof settings.semantic_embed_index !== 'undefined') {
-                setSemanticEmbedIndex(!!settings.semantic_embed_index);
-            }
-            if (typeof settings.semantic_embed_senders === 'string') {
-                setSemanticEmbedSenders(settings.semantic_embed_senders || 'User, ATHENAS');
-            }
-            if (typeof settings.chat_startup_context_limit === 'number') {
-                setChatStartupContextLimit(String(settings.chat_startup_context_limit));
-            } else if (settings.chat_startup_context_limit != null) {
-                const n = parseInt(String(settings.chat_startup_context_limit), 10);
-                if (!Number.isNaN(n)) setChatStartupContextLimit(String(n));
-            }
-            if (typeof settings.semantic_embed_min_length === 'number') {
-                setSemanticEmbedMinLength(String(settings.semantic_embed_min_length));
-            } else if (settings.semantic_embed_min_length != null) {
-                const n = parseInt(String(settings.semantic_embed_min_length), 10);
-                if (!Number.isNaN(n)) setSemanticEmbedMinLength(String(n));
-            }
-            if (typeof settings.semantic_embed_max_chars === 'number') {
-                setSemanticEmbedMaxChars(String(settings.semantic_embed_max_chars));
-            } else if (settings.semantic_embed_max_chars != null) {
-                const n = parseInt(String(settings.semantic_embed_max_chars), 10);
-                if (!Number.isNaN(n)) setSemanticEmbedMaxChars(String(n));
-            }
-            if (typeof settings.memory_remote_selective !== 'undefined') {
-                setMemoryRemoteSelectiveState(!!settings.memory_remote_selective);
-            }
-            if (typeof settings.memory_ollama_gate_enabled !== 'undefined') {
-                setMemoryOllamaGateState(!!settings.memory_ollama_gate_enabled);
-            } else if (typeof settings.memory_gemini_gate_enabled !== 'undefined') {
-                setMemoryOllamaGateState(!!settings.memory_gemini_gate_enabled);
-            }
-            if (typeof settings.memory_full_remote !== 'undefined') {
-                setMemoryFullRemoteState(!!settings.memory_full_remote);
-            }
-            if (typeof settings.memory_gemini_gate_enabled !== 'undefined') {
-                setMemoryGeminiGateEnabledState(!!settings.memory_gemini_gate_enabled);
-            }
-            if (typeof settings.memory_gate_model === 'string') {
-                setMemoryGateModel(settings.memory_gate_model);
-            }
-            if (typeof settings.memory_ollama_model === 'string') {
-                setMemoryOllamaModel(settings.memory_ollama_model);
-            }
-            if (typeof settings.memory_ollama_url === 'string') {
-                setMemoryOllamaUrl(settings.memory_ollama_url);
-            }
-            if (typeof settings.memory_gate_retries === 'number') {
-                setMemoryGateRetries(String(settings.memory_gate_retries));
-            } else if (settings.memory_gate_retries != null) {
-                const n = parseInt(String(settings.memory_gate_retries), 10);
-                if (!Number.isNaN(n)) setMemoryGateRetries(String(n));
-            }
-            if (typeof settings.memory_gate_timeout_sec === 'number') {
-                setMemoryGateTimeoutSec(String(settings.memory_gate_timeout_sec));
-            } else if (settings.memory_gate_timeout_sec != null) {
-                const n = parseFloat(String(settings.memory_gate_timeout_sec));
-                if (!Number.isNaN(n)) setMemoryGateTimeoutSec(String(n));
-            }
-            if (typeof settings.memory_salience_debug !== 'undefined') {
-                setMemorySalienceDebugState(!!settings.memory_salience_debug);
-            }
             if (Array.isArray(settings.launch_app_catalog)) {
                 setLaunchAppCatalog(settings.launch_app_catalog);
             }
@@ -2513,105 +1906,6 @@ const SettingsWindow = ({
         socket.emit('update_settings', { camera_flipped: newVal });
     };
 
-    const setSemanticSearch = (newVal) => {
-        setSemanticSearchEnabled(newVal);
-        socket.emit('update_settings', { semantic_search_enabled: newVal });
-    };
-
-    const setSemanticIndex = (newVal) => {
-        setSemanticEmbedIndex(newVal);
-        socket.emit('update_settings', { semantic_embed_index: newVal });
-    };
-
-    const commitSemanticEmbedSenders = useCallback(
-        (str) => {
-            const s = (str || '').trim() || 'User, ATHENAS';
-            setSemanticEmbedSenders(s);
-            socket.emit('update_settings', { semantic_embed_senders: s });
-        },
-        [socket]
-    );
-
-    const flushSemanticMinLength = useCallback(() => {
-        const n = parseInt(String(semanticEmbedMinLength).trim(), 10);
-        const v = Number.isNaN(n) ? 24 : Math.max(0, Math.min(500, n));
-        setSemanticEmbedMinLength(String(v));
-        socket.emit('update_settings', { semantic_embed_min_length: v });
-    }, [semanticEmbedMinLength, socket]);
-
-    const flushSemanticMaxChars = useCallback(() => {
-        const n = parseInt(String(semanticEmbedMaxChars).trim(), 10);
-        const v = Number.isNaN(n) ? 8000 : Math.max(200, Math.min(8000, n));
-        setSemanticEmbedMaxChars(String(v));
-        socket.emit('update_settings', { semantic_embed_max_chars: v });
-    }, [semanticEmbedMaxChars, socket]);
-
-    const flushChatStartupContextLimit = useCallback(() => {
-        const n = parseInt(String(chatStartupContextLimit).trim(), 10);
-        const v = Number.isNaN(n) ? 100 : Math.max(10, Math.min(500, n));
-        setChatStartupContextLimit(String(v));
-        socket.emit('update_settings', { chat_startup_context_limit: v });
-    }, [chatStartupContextLimit, socket]);
-
-    const setMemoryRemoteSelective = useCallback(
-        (v) => {
-            const next = !!v;
-            setMemoryRemoteSelectiveState(next);
-            socket.emit('update_settings', { memory_remote_selective: next });
-        },
-        [socket]
-    );
-
-    const setMemoryOllamaGateEnabled = useCallback((v) => {
-        const next = !!v;
-        setMemoryOllamaGateState(next);
-        socket.emit('update_settings', { memory_ollama_gate_enabled: next });
-    }, [socket]);
-
-    const setMemoryFullRemote = useCallback((v) => {
-        const next = !!v;
-        setMemoryFullRemoteState(next);
-        socket.emit('update_settings', { memory_full_remote: next });
-    }, [socket]);
-
-    const setMemoryGeminiGateEnabled = useCallback((v) => {
-        const next = !!v;
-        setMemoryGeminiGateEnabledState(next);
-        socket.emit('update_settings', { memory_gemini_gate_enabled: next });
-    }, [socket]);
-
-    const flushMemoryGateModel = useCallback(() => {
-        socket.emit('update_settings', { memory_gate_model: memoryGateModel.trim() });
-    }, [memoryGateModel, socket]);
-
-    const flushMemoryOllamaModel = useCallback(() => {
-        socket.emit('update_settings', { memory_ollama_model: memoryOllamaModel.trim() });
-    }, [memoryOllamaModel, socket]);
-
-    const flushMemoryOllamaUrl = useCallback(() => {
-        socket.emit('update_settings', { memory_ollama_url: memoryOllamaUrl.trim() });
-    }, [memoryOllamaUrl, socket]);
-
-    const flushMemoryGateRetries = useCallback(() => {
-        const n = parseInt(String(memoryGateRetries).trim(), 10);
-        const v = Number.isNaN(n) ? 3 : Math.max(1, Math.min(5, n));
-        setMemoryGateRetries(String(v));
-        socket.emit('update_settings', { memory_gate_retries: v });
-    }, [memoryGateRetries, socket]);
-
-    const flushMemoryGateTimeoutSec = useCallback(() => {
-        const n = parseFloat(String(memoryGateTimeoutSec).trim());
-        const v = Number.isNaN(n) ? 20 : Math.max(3, Math.min(120, n));
-        setMemoryGateTimeoutSec(String(v));
-        socket.emit('update_settings', { memory_gate_timeout_sec: v });
-    }, [memoryGateTimeoutSec, socket]);
-
-    const setMemorySalienceDebug = useCallback((v) => {
-        const next = !!v;
-        setMemorySalienceDebugState(next);
-        socket.emit('update_settings', { memory_salience_debug: next });
-    }, [socket]);
-
     const copyConfigPath = async () => {
         if (!launchAppsConfigPath) return;
         try {
@@ -2626,7 +1920,7 @@ const SettingsWindow = ({
     const ui = (
         <div
             id="settings-portal-root"
-            className={`fixed inset-0 z-[250] flex h-[100dvh] w-full flex-col overflow-hidden border-0 bg-zinc-950/[0.95] text-zinc-100 shadow-[inset_0_0_120px_rgba(0,0,0,0.35)] backdrop-blur-[0.5px] pointer-events-auto outline-none ring-0 ${settingsType}`}
+            className={`fixed inset-0 z-[250] flex h-[100dvh] w-full flex-col overflow-hidden border-0 bg-zinc-950 text-zinc-100 shadow-[inset_0_0_120px_rgba(0,0,0,0.35)] backdrop-blur-[0.5px] pointer-events-auto outline-none ring-0 ${settingsType}`}
             role="dialog"
             aria-modal="true"
             aria-labelledby="settings-title"
@@ -2650,7 +1944,7 @@ const SettingsWindow = ({
                 aria-hidden
             />
 
-            <header className="relative z-10 flex shrink-0 items-center justify-between gap-4 border-b border-white/15 bg-zinc-950/70 px-6 py-4 sm:px-10 sm:py-5">
+            <header className="relative z-10 flex shrink-0 items-center justify-between gap-4 border-b border-white/15 bg-zinc-950 px-6 py-4 sm:px-10 sm:py-5">
                 <div className="min-w-0 flex-1">
                     <h2
                         id="settings-title"
@@ -2659,7 +1953,7 @@ const SettingsWindow = ({
                         Configurações
                     </h2>
                     <p className="mt-1 max-w-2xl text-xs text-zinc-400">
-                        Áudio, câmera, cérebro (Supabase + Gemini), memória &amp; contexto, integrações (ComfyUI, n8n, Pierre), apps e ATHENAS.
+                        Áudio, câmera, cérebro (Supabase + Gemini), integrações (ComfyUI, n8n), apps e ATHENAS.
                     </p>
                     <p className="mt-1 text-[10px] text-zinc-400">Esc para fechar</p>
                 </div>
@@ -2686,77 +1980,39 @@ const SettingsWindow = ({
                             credentialsMeta={credentialsMeta}
                             socket={socket}
                         >
-                            <SemanticMemoryHubSection
-                                integrations={integrations}
-                                credentialsMeta={credentialsMeta}
-                                testResults={integrationTestResults}
-                                testRunning={integrationTestRunning}
-                                semanticSearchEnabled={semanticSearchEnabled}
-                                semanticEmbedIndex={semanticEmbedIndex}
-                                semanticEmbedSenders={semanticEmbedSenders}
-                                semanticEmbedMinLength={semanticEmbedMinLength}
-                                semanticEmbedMaxChars={semanticEmbedMaxChars}
-                                memoryRemoteSelective={memoryRemoteSelective}
-                                setMemoryRemoteSelective={setMemoryRemoteSelective}
-                                memoryOllamaGateEnabled={memoryOllamaGateEnabled}
-                                setMemoryOllamaGateEnabled={setMemoryOllamaGateEnabled}
-                                memoryFullRemote={memoryFullRemote}
-                                setMemoryFullRemote={setMemoryFullRemote}
-                                memoryGeminiGateEnabled={memoryGeminiGateEnabled}
-                                setMemoryGeminiGateEnabled={setMemoryGeminiGateEnabled}
-                                memoryGateModel={memoryGateModel}
-                                setMemoryGateModel={setMemoryGateModel}
-                                flushMemoryGateModel={flushMemoryGateModel}
-                                memoryOllamaModel={memoryOllamaModel}
-                                setMemoryOllamaModel={setMemoryOllamaModel}
-                                flushMemoryOllamaModel={flushMemoryOllamaModel}
-                                memoryOllamaUrl={memoryOllamaUrl}
-                                setMemoryOllamaUrl={setMemoryOllamaUrl}
-                                flushMemoryOllamaUrl={flushMemoryOllamaUrl}
-                                memoryGateRetries={memoryGateRetries}
-                                setMemoryGateRetries={setMemoryGateRetries}
-                                flushMemoryGateRetries={flushMemoryGateRetries}
-                                memoryGateTimeoutSec={memoryGateTimeoutSec}
-                                setMemoryGateTimeoutSec={setMemoryGateTimeoutSec}
-                                flushMemoryGateTimeoutSec={flushMemoryGateTimeoutSec}
-                                memorySalienceDebug={memorySalienceDebug}
-                                setMemorySalienceDebug={setMemorySalienceDebug}
-                                chatStartupContextLimit={chatStartupContextLimit}
-                                setChatStartupContextLimit={setChatStartupContextLimit}
-                                flushChatStartupContextLimit={flushChatStartupContextLimit}
-                                setSemanticSearch={setSemanticSearch}
-                                setSemanticIndex={setSemanticIndex}
-                                commitSemanticEmbedSenders={commitSemanticEmbedSenders}
-                                setSemanticEmbedMinLength={setSemanticEmbedMinLength}
-                                flushSemanticMinLength={flushSemanticMinLength}
-                                setSemanticEmbedMaxChars={setSemanticEmbedMaxChars}
-                                flushSemanticMaxChars={flushSemanticMaxChars}
-                            />
                         </BrainAndIntegrationsPanels>
                         <EnvReferenceSection />
                         <DotEnvFileSection socket={socket} />
                         <div className="grid min-h-0 grid-cols-1 gap-6 xl:grid-cols-2 xl:gap-8 xl:[grid-template-rows:1fr] xl:items-stretch">
-                            <div className="flex flex-col gap-4 xl:h-full xl:min-h-0 xl:justify-start xl:gap-5 xl:py-1">
-                                <section>
-                                    <h3 className={sectionTitleClass}>
-                                        <Shield className="h-3.5 w-3.5" strokeWidth={2} />
-                                        Segurança
-                                    </h3>
-                                    <div className={rowClass}>
-                                        <span className="text-zinc-100">Autenticação facial</span>
-                                        <SettingsSwitch
-                                            checked={faceAuthEnabled}
-                                            onCheckedChange={setFaceAuth}
-                                            ariaLabel="Alternar autenticação facial"
-                                        />
-                                    </div>
-                                </section>
+                            <div className="flex flex-col gap-6 xl:h-full xl:min-h-0 xl:justify-start xl:py-1">
+                                <SettingsHubCard
+                                    icon={SlidersHorizontal}
+                                    title="Sessão & dispositivos"
+                                    badge="Local"
+                                    description="Microfone, saída de áudio, câmera, cursor orbital e preferências de interface. Tudo corre neste PC — sem depender do Supabase."
+                                    gradientClass="from-sky-950/[0.2] via-cyan-950/14 to-zinc-950/90"
+                                >
+                                    <div className="space-y-8">
+                                        <div>
+                                            <h4 className={subsectionTitleClass}>
+                                                <Shield className="h-3.5 w-3.5" strokeWidth={2} />
+                                                Segurança
+                                            </h4>
+                                            <div className={rowClass}>
+                                                <span className="text-zinc-100">Autenticação facial</span>
+                                                <SettingsSwitch
+                                                    checked={faceAuthEnabled}
+                                                    onCheckedChange={setFaceAuth}
+                                                    ariaLabel="Alternar autenticação facial"
+                                                />
+                                            </div>
+                                        </div>
 
-                                <section>
-                                    <h3 className={sectionTitleClass}>
-                                        <Mic className="h-3.5 w-3.5" strokeWidth={2} />
-                                        Áudio e câmera
-                                    </h3>
+                                        <div className="border-t border-white/[0.06] pt-8">
+                                            <h4 className={subsectionTitleClass}>
+                                                <Mic className="h-3.5 w-3.5" strokeWidth={2} />
+                                                Áudio e câmera
+                                            </h4>
                                     <div className="space-y-3">
                                         <div>
                                             <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-zinc-400">
@@ -2892,85 +2148,98 @@ const SettingsWindow = ({
                                             </select>
                                         </div>
                                     </div>
-                                </section>
+                                        </div>
 
-                                <section>
-                                    <h3 className={sectionTitleClass}>
-                                        <MousePointer2 className="h-3.5 w-3.5" strokeWidth={2} />
-                                        Cursor
-                                    </h3>
-                                    <div className="mb-2 flex items-center justify-between">
-                                        <span className="text-[10px] uppercase tracking-wider text-zinc-400">Sensibilidade</span>
-                                        <span className="font-mono text-xs text-zinc-300">{cursorSensitivity}x</span>
-                                    </div>
-                                    <input
-                                        type="range"
-                                        min="1.0"
-                                        max="5.0"
-                                        step="0.1"
-                                        value={cursorSensitivity}
-                                        onChange={(e) => setCursorSensitivity(parseFloat(e.target.value))}
-                                        className="h-2 w-full cursor-pointer appearance-none rounded-full bg-zinc-800 accent-zinc-200"
-                                    />
-                                </section>
+                                        <div className="border-t border-white/[0.06] pt-8">
+                                            <h4 className={subsectionTitleClass}>
+                                                <MousePointer2 className="h-3.5 w-3.5" strokeWidth={2} />
+                                                Cursor
+                                            </h4>
+                                            <div className="mb-2 flex items-center justify-between">
+                                                <span className="text-[10px] uppercase tracking-wider text-zinc-400">
+                                                    Sensibilidade
+                                                </span>
+                                                <span className="font-mono text-xs text-zinc-300">{cursorSensitivity}x</span>
+                                            </div>
+                                            <input
+                                                type="range"
+                                                min="1.0"
+                                                max="5.0"
+                                                step="0.1"
+                                                value={cursorSensitivity}
+                                                onChange={(e) => setCursorSensitivity(parseFloat(e.target.value))}
+                                                className="h-2 w-full cursor-pointer appearance-none rounded-full bg-zinc-800 accent-zinc-200"
+                                            />
+                                        </div>
 
-                                <section>
-                                    <h3 className={sectionTitleClass}>
-                                        <Hand className="h-3.5 w-3.5" strokeWidth={2} />
-                                        Gestos
-                                    </h3>
-                                    <div className={rowClass}>
-                                        <span className="text-zinc-100">Espelhar câmera (horizontal)</span>
-                                        <SettingsSwitch
-                                            checked={isCameraFlipped}
-                                            onCheckedChange={setCameraFlip}
-                                            ariaLabel="Espelhar câmera"
-                                        />
-                                    </div>
-                                </section>
+                                        <div className="border-t border-white/[0.06] pt-8">
+                                            <h4 className={subsectionTitleClass}>
+                                                <Hand className="h-3.5 w-3.5" strokeWidth={2} />
+                                                Gestos
+                                            </h4>
+                                            <div className={rowClass}>
+                                                <span className="text-zinc-100">Espelhar câmera (horizontal)</span>
+                                                <SettingsSwitch
+                                                    checked={isCameraFlipped}
+                                                    onCheckedChange={setCameraFlip}
+                                                    ariaLabel="Espelhar câmera"
+                                                />
+                                            </div>
+                                        </div>
 
-                                <section>
-                                    <h3 className={sectionTitleClass}>
-                                        <Palette className="h-3.5 w-3.5" strokeWidth={2} />
-                                        Interface
-                                    </h3>
-                                    <div className={rowClass}>
-                                        <span className="text-zinc-100">Mostrar histórico do chat</span>
-                                        <SettingsSwitch
-                                            checked={showChatVisualization}
-                                            onCheckedChange={setShowChatVisualization}
-                                            ariaLabel="Mostrar histórico do chat (a barra de mensagem permanece)"
-                                        />
+                                        <div className="border-t border-white/[0.06] pt-8">
+                                            <h4 className={subsectionTitleClass}>
+                                                <Palette className="h-3.5 w-3.5" strokeWidth={2} />
+                                                Interface
+                                            </h4>
+                                            <div className={rowClass}>
+                                                <span className="text-zinc-100">Mostrar histórico do chat</span>
+                                                <SettingsSwitch
+                                                    checked={showChatVisualization}
+                                                    onCheckedChange={setShowChatVisualization}
+                                                    ariaLabel="Mostrar histórico do chat (a barra de mensagem permanece)"
+                                                />
+                                            </div>
+                                        </div>
                                     </div>
-                                </section>
+                                </SettingsHubCard>
                             </div>
 
-                            <div className="flex flex-col gap-4 xl:h-full xl:min-h-0 xl:gap-4">
-                                <section
-                                    className={`flex min-h-0 flex-col p-5 sm:p-6 xl:min-h-[12rem] xl:flex-1 ${panelClass}`}
-                                >
-                                    <div className="mb-3 flex shrink-0 items-start justify-between gap-3">
-                                        <h3 className={`${sectionTitleClass} mb-0`}>
-                                            <AppWindow className="h-3.5 w-3.5" strokeWidth={2} />
-                                            Apps abertos pela voz
-                                        </h3>
+                            <div className="flex flex-col gap-6 xl:h-full xl:min-h-0">
+                                <SettingsHubCard
+                                    icon={AppWindow}
+                                    title="Apps abertos pela voz"
+                                    badge={
+                                        launchAppCatalog.length > 0
+                                            ? `${launchAppCatalog.length} na lista`
+                                            : 'Lista vazia'
+                                    }
+                                    description={
+                                        <>
+                                            Cadastre executáveis na lista branca. A assistente usa o campo{' '}
+                                            <code className="rounded bg-black/40 px-1.5 py-0.5 text-[11px] text-zinc-200">
+                                                id
+                                            </code>{' '}
+                                            ao abrir (ex.: “abre o bloco de notas”).
+                                        </>
+                                    }
+                                    gradientClass="from-emerald-950/[0.2] via-teal-950/14 to-zinc-950/90"
+                                    rootClassName="xl:min-h-0 xl:flex-1"
+                                    bodyClassName="flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-6 sm:py-5"
+                                    headerRight={
                                         <button
                                             type="button"
                                             onClick={refreshCatalog}
                                             disabled={catalogRefreshing}
                                             className="flex shrink-0 items-center gap-1.5 rounded-xl border border-white/10 bg-white/5 px-3 py-2 text-[10px] uppercase tracking-wider text-zinc-300 transition-colors hover:bg-white/10 hover:text-white disabled:opacity-40"
                                             title="Recarregar lista do arquivo JSON"
+                                            style={{ WebkitAppRegion: 'no-drag' }}
                                         >
                                             <RefreshCw className={`h-3.5 w-3.5 ${catalogRefreshing ? 'animate-spin' : ''}`} />
                                             Atualizar
                                         </button>
-                                    </div>
-                                    <p className="mb-4 shrink-0 text-xs leading-relaxed text-zinc-400 sm:text-sm">
-                                        Cadastre executáveis na lista branca. A assistente usa o campo{' '}
-                                        <code className="rounded bg-black/40 px-1.5 py-0.5 text-[11px] text-zinc-200">id</code> ao
-                                        abrir (ex.: “abre o bloco de notas”).
-                                    </p>
-
+                                    }
+                                >
                                     <div className="mb-4 shrink-0 space-y-3 rounded-xl border border-emerald-500/20 bg-emerald-950/10 p-4">
                                         <div className="flex items-center gap-2 text-[10px] font-bold uppercase tracking-[0.16em] text-emerald-200/90">
                                             <FolderOpen className="h-3.5 w-3.5" strokeWidth={2} />
@@ -3129,18 +2398,17 @@ const SettingsWindow = ({
                                             ))
                                         )}
                                     </div>
-                                </section>
+                                </SettingsHubCard>
 
-                                <section
-                                    className={`flex min-h-0 flex-col p-5 sm:p-6 xl:min-h-[12rem] xl:flex-1 ${panelClass}`}
+                                <SettingsHubCard
+                                    icon={Wrench}
+                                    title="Confirmação de ferramentas"
+                                    badge="Tools"
+                                    description="Ligado = pede aprovação antes da ação. Desligado = execução direta."
+                                    gradientClass="from-amber-950/[0.18] via-orange-950/12 to-zinc-950/90"
+                                    rootClassName="xl:min-h-0 xl:flex-1"
+                                    bodyClassName="flex min-h-0 flex-1 flex-col px-4 py-4 sm:px-6 sm:py-5"
                                 >
-                                    <h3 className={sectionTitleClass}>
-                                        <Wrench className="h-3.5 w-3.5" strokeWidth={2} />
-                                        Confirmação de ferramentas
-                                    </h3>
-                                    <p className="mb-3 shrink-0 text-xs leading-relaxed text-zinc-400">
-                                        Ligado = pede aprovação antes da ação. Desligado = execução direta.
-                                    </p>
                                     <div className="flex min-h-0 flex-1 flex-col gap-2 overflow-y-auto pr-1">
                                         {TOOLS.map((tool) => {
                                             const isRequired = permissions[tool.id] !== false;
@@ -3156,7 +2424,7 @@ const SettingsWindow = ({
                                             );
                                         })}
                                     </div>
-                                </section>
+                                </SettingsHubCard>
                             </div>
                         </div>
                     </div>

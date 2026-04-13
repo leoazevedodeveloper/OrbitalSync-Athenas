@@ -4,11 +4,11 @@
     "type": "split",
     "children": [
       {
-        "id": "aea9226d76d38cf9",
+        "id": "5a182f18ffde5b55",
         "type": "tabs",
         "children": [
           {
-            "id": "0e237049378e9e25",
+            "id": "4ef442af52a52302",
             "type": "leaf",
             "state": {
               "type": "graph",
@@ -176,8 +176,9 @@
       "bases:Criar nova base": false
     }
   },
-  "active": "0e237049378e9e25",
+  "active": "4ef442af52a52302",
   "lastOpenFiles": [
+    "wikilinks.md",
     "04 - Tasks/Tarefas_ativas.md",
     "02 - Skills/Geracao_de_imagem.md",
     "04 - Tasks/Tarefas_concluidas.md",
@@ -204,7 +205,6 @@
     "03 - Thinking/Priorizacao.md",
     "03 - Thinking/Tomada_de_decisão.md",
     "02 - Skills/Calendario.md",
-    "02 - Skills/Automação.md",
     "08 - System",
     "07 - Logs",
     "06 - State",

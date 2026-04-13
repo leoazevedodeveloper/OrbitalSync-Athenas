@@ -19,7 +19,7 @@ backend/
 │       ├── bootstrap.py      # FastAPI + Socket.IO ASGI
 │       ├── http_routes.py    # GET /status, /api/comfyui-image
 │       ├── state.py, audio.py
-│       └── socket_handlers/  # connect, audio, chat, settings, finance, emit
+│       └── socket_handlers/  # connect, audio, chat, settings, emit
 ```
 
 O Electron lança `python server.py` com `cwd` = `backend/`.

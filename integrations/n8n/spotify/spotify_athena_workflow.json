@@ -14,14 +14,14 @@
       "typeVersion": 2,
       "position": [
         0,
-        300
+        420
       ],
       "webhookId": "athena-spotify"
     },
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Mapeia body.action -> spotifyOp (chaves do Switch n8n: pause, resume, nextSong, …).\n// IMPORTANTE: o Switch NÃO tem chave \"play\" — só \"resume\". Por isso play → resume.\n\nconst root = $input.first().json;\nconst body = root.body && typeof root.body === 'object' ? root.body : root;\nconst pickAction = () => {\n  if (body && typeof body.action === 'string' && body.action.trim()) return body.action;\n  if (body && typeof body.command === 'string' && body.command.trim()) return body.command;\n  if (body && typeof body.intent === 'string' && body.intent.trim()) return body.intent;\n  return '';\n};\n\nconst raw = String(pickAction())\n  .toLowerCase()\n  .trim();\n\nconst normalized = raw\n  .normalize('NFD')\n  .replace(/[\\u0300-\\u036f]/g, '')\n  .replace(/\\s+/g, '_');\n\nconst map = {\n  pause: 'pause',\n  play: 'resume',\n  resume: 'resume',\n  start: 'resume',\n  unpause: 'resume',\n  continue: 'resume',\n  continuar: 'resume',\n  retomar: 'resume',\n  despausar: 'resume',\n  next: 'nextSong',\n  skip: 'nextSong',\n  previous: 'previousSong',\n  back: 'previousSong',\n  volume: 'volume',\n  playlist: 'listPlaylists',\n  play_playlist: 'startMusic',\n  list_playlists: 'listPlaylists',\n  playlists: 'listPlaylists',\n  listar_playlists: 'listPlaylists',\n  trocar_playlist: 'switchPlaylist',\n  switch_playlist: 'switchPlaylist',\n  change_playlist: 'switchPlaylist',\n  tocar_musica: 'playTrack',\n  play_track: 'playTrack',\n  track: 'playTrack',\n  tocar_genero: 'playGenre',\n  play_genre: 'playGenre',\n  genre: 'playGenre',\n};\n\nlet spotifyOp = map[raw] || map[normalized];\n\n// Health check/ping interno do Orbital.\nif (raw === '__orbital_connectivity_probe__') {\n  spotifyOp = 'healthcheck';\n}\n\n// play / resume / start + dados de faixa -> tocar música específica (não só retomar).\n// Sem isso, action:play + track_name ia para Resume e ignorava o nome.\nconst hasTrackTarget = Boolean(\n  (body.track_uri && String(body.track_uri).trim()) ||\n  (body.track_id && String(body.track_id).trim()) ||\n  (body.track_name && String(body.track_name).trim()) ||\n  (body.track_query && String(body.track_query).trim()) ||\n  (body.track && String(body.track).trim()) ||\n  (body.song && String(body.song).trim()) ||\n  (body.music && String(body.music).trim()) ||\n  (body.query &&\n    String(body.query).trim() &&\n    !body.playlist_uri &&\n    !body.context_uri) ||\n  (body.artist && String(body.artist).trim()) ||\n  (body.artista && String(body.artista).trim())\n);\nif (hasTrackTarget && spotifyOp === 'resume' && raw !== '__orbital_connectivity_probe__') {\n  spotifyOp = 'playTrack';\n}\n\n// Desambiguação: \"playlist\" sem URI/ID -> listar; com URI/ID -> tocar/trocar.\nif (raw === 'playlist' || normalized === 'playlist') {\n  const hasContext = Boolean(\n    body.playlist_uri || body.uri || body.context_uri || body.playlist_id\n  );\n  spotifyOp = hasContext ? 'switchPlaylist' : 'listPlaylists';\n}\n\nif (!spotifyOp) {\n  // Linguagem natural no campo action, ex: \"toca a paixão me levou pfv\"\n  if (/^(toca|toque|tocar|play)\\b/.test(raw)) {\n    spotifyOp = 'playTrack';\n    if (!body.track_query && !body.track_name && !body.track && !body.song && !body.music && !body.query) {\n      const extracted = raw\n        .replace(/^(toca|toque|tocar|play)\\s+/i, '')\n        .replace(/\\b(pfv|por favor)\\b/gi, '')\n        .trim();\n      if (extracted) body.track_query = extracted;\n    }\n  } else if (\n    /\\bplaylist(s)?\\b/.test(raw) &&\n    /\\b(quais|quantas|minhas|lista|listar|mostrar|ver|tenho|salva|salvas|cadastrada|cadastradas|guardada|guardadas)\\b/.test(raw)\n  ) {\n    spotifyOp = 'listPlaylists';\n  }\n}\n\nif (!spotifyOp) {\n  spotifyOp = 'unsupported';\n}\n\nreturn [{ json: { spotifyOp, body, action: raw, normalizedAction: normalized } }];\n"
+        "jsCode": "// Mapeia body.action -> spotifyOp (chaves do Switch n8n: pause, resume, nextSong, …).\n// IMPORTANTE: o Switch NÃO tem chave \"play\" — só \"resume\". Por isso play → resume.\n\nconst root = $input.first().json;\nconst body = root.body && typeof root.body === 'object' ? root.body : root;\nconst pickAction = () => {\n  if (body && typeof body.action === 'string' && body.action.trim()) return body.action;\n  if (body && typeof body.command === 'string' && body.command.trim()) return body.command;\n  if (body && typeof body.intent === 'string' && body.intent.trim()) return body.intent;\n  return '';\n};\n\nconst raw = String(pickAction())\n  .toLowerCase()\n  .trim();\n\nconst normalized = raw\n  .normalize('NFD')\n  .replace(/[\\u0300-\\u036f]/g, '')\n  .replace(/\\s+/g, '_');\n\nconst map = {\n  pause: 'pause',\n  play: 'resume',\n  resume: 'resume',\n  start: 'resume',\n  unpause: 'resume',\n  continue: 'resume',\n  continuar: 'resume',\n  retomar: 'resume',\n  despausar: 'resume',\n  next: 'nextSong',\n  skip: 'nextSong',\n  previous: 'previousSong',\n  back: 'previousSong',\n  volume: 'volume',\n  playlist: 'listPlaylists',\n  play_playlist: 'startMusic',\n  list_playlists: 'listPlaylists',\n  playlists: 'listPlaylists',\n  listar_playlists: 'listPlaylists',\n  trocar_playlist: 'switchPlaylist',\n  switch_playlist: 'switchPlaylist',\n  change_playlist: 'switchPlaylist',\n  tocar_musica: 'playTrack',\n  play_track: 'playTrack',\n  track: 'playTrack',\n  tocar_genero: 'playGenre',\n  play_genre: 'playGenre',\n  genre: 'playGenre',\n};\n\nlet spotifyOp = map[raw] || map[normalized];\n\nconst parsePercent = (value) => {\n  if (value === null || value === undefined || value === '') return null;\n  const n = Number(String(value).replace(',', '.'));\n  if (!Number.isFinite(n)) return null;\n  return Math.max(0, Math.min(100, Math.round(n)));\n};\n\nconst upWords = /\\b(up|increase|raise|higher|louder|aumentar|mais|alto)\\b/i;\nconst downWords = /\\b(down|decrease|lower|quieter|softer|abaixar|baixar|diminuir|menos|baixo)\\b/i;\n\nconst actionMentionsVolume = /\\b(volume|som|audio|áudio)\\b/i.test(raw);\nconst hasExplicitVolumeField =\n  body.volume_percent !== undefined ||\n  body.volume !== undefined ||\n  body.volume_delta !== undefined ||\n  body.delta !== undefined;\n\nif ((actionMentionsVolume && (upWords.test(raw) || downWords.test(raw))) || hasExplicitVolumeField) {\n  spotifyOp = 'volume';\n}\n\n// Health check/ping interno do Orbital.\nif (raw === '__orbital_connectivity_probe__') {\n  spotifyOp = 'healthcheck';\n}\n\n// play / resume / start + dados de faixa -> tocar música específica (não só retomar).\n// Sem isso, action:play + track_name ia para Resume e ignorava o nome.\nconst hasTrackTarget = Boolean(\n  (body.track_uri && String(body.track_uri).trim()) ||\n  (body.track_id && String(body.track_id).trim()) ||\n  (body.track_name && String(body.track_name).trim()) ||\n  (body.track_query && String(body.track_query).trim()) ||\n  (body.track && String(body.track).trim()) ||\n  (body.song && String(body.song).trim()) ||\n  (body.music && String(body.music).trim()) ||\n  (body.query &&\n    String(body.query).trim() &&\n    !body.playlist_uri &&\n    !body.context_uri) ||\n  (body.artist && String(body.artist).trim()) ||\n  (body.artista && String(body.artista).trim())\n);\nif (hasTrackTarget && spotifyOp === 'resume' && raw !== '__orbital_connectivity_probe__') {\n  spotifyOp = 'playTrack';\n}\n\n// Desambiguação: \"playlist\" sem URI/ID -> listar; com URI/ID -> tocar/trocar.\nif (raw === 'playlist' || normalized === 'playlist') {\n  const hasContext = Boolean(\n    body.playlist_uri || body.uri || body.context_uri || body.playlist_id\n  );\n  spotifyOp = hasContext ? 'switchPlaylist' : 'listPlaylists';\n}\n\nif (!spotifyOp) {\n  // Linguagem natural no campo action, ex: \"toca a paixão me levou pfv\"\n  if (/^(toca|toque|tocar|play)\\b/.test(raw)) {\n    spotifyOp = 'playTrack';\n    if (!body.track_query && !body.track_name && !body.track && !body.song && !body.music && !body.query) {\n      const extracted = raw\n        .replace(/^(toca|toque|tocar|play)\\s+/i, '')\n        .replace(/\\b(pfv|por favor)\\b/gi, '')\n        .trim();\n      if (extracted) body.track_query = extracted;\n    }\n  } else if (\n    /\\bplaylist(s)?\\b/.test(raw) &&\n    /\\b(quais|quantas|minhas|lista|listar|mostrar|ver|tenho|salva|salvas|cadastrada|cadastradas|guardada|guardadas)\\b/.test(raw)\n  ) {\n    spotifyOp = 'listPlaylists';\n  }\n}\n\nif (!spotifyOp) {\n  spotifyOp = 'unsupported';\n}\n\nif (spotifyOp === 'volume') {\n  const explicitPercent = parsePercent(body.volume_percent);\n  const explicitVolume = parsePercent(body.volume);\n  const deltaRaw = parsePercent(body.volume_delta ?? body.delta);\n\n  if (explicitPercent !== null) {\n    body.volume_percent = explicitPercent;\n  } else if (explicitVolume !== null) {\n    body.volume_percent = explicitVolume;\n  } else if (deltaRaw !== null) {\n    const base = 50;\n    const sign = downWords.test(raw) ? -1 : 1;\n    body.volume_percent = Math.max(0, Math.min(100, base + sign * deltaRaw));\n  } else if (downWords.test(raw)) {\n    body.volume_percent = 35;\n  } else if (upWords.test(raw)) {\n    body.volume_percent = 65;\n  } else {\n    body.volume_percent = 50;\n  }\n}\n\nreturn [{ json: { spotifyOp, body, action: raw, normalizedAction: normalized } }];\n"
       },
       "id": "code-map",
       "name": "Map action",
@@ -29,7 +29,7 @@
       "typeVersion": 2,
       "position": [
         220,
-        300
+        420
       ]
     },
     {
@@ -44,7 +44,7 @@
       "typeVersion": 3.2,
       "position": [
         440,
-        300
+        420
       ]
     },
     {
@@ -77,7 +77,7 @@
       "typeVersion": 1,
       "position": [
         1080,
-        120
+        180
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -96,7 +96,7 @@
       "typeVersion": 1,
       "position": [
         1080,
-        240
+        360
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -115,7 +115,7 @@
       "typeVersion": 1,
       "position": [
         1080,
-        360
+        540
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -127,7 +127,7 @@
       "parameters": {
         "resource": "player",
         "operation": "volume",
-        "volumePercent": "={{ Number($json.body.volume_percent ?? $json.body.volume ?? 50) }}"
+        "volumePercent": "={{ (() => { const raw = $json.body?.volume_percent ?? $json.body?.volume ?? 50; const n = Number(String(raw).replace(',', '.')); return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 50; })() }}"
       },
       "id": "sp-vol",
       "name": "Volume",
@@ -135,7 +135,7 @@
       "typeVersion": 1,
       "position": [
         1080,
-        480
+        720
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -155,7 +155,7 @@
       "typeVersion": 1,
       "position": [
         1080,
-        600
+        900
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -175,7 +175,7 @@
       "typeVersion": 1,
       "position": [
         700,
-        720
+        1080
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -194,7 +194,7 @@
       "typeVersion": 2,
       "position": [
         900,
-        720
+        1080
       ]
     },
     {
@@ -209,7 +209,7 @@
       "typeVersion": 1,
       "position": [
         1080,
-        840
+        1260
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -228,7 +228,7 @@
       "typeVersion": 2,
       "position": [
         700,
-        960
+        1440
       ]
     },
     {
@@ -245,7 +245,7 @@
       "typeVersion": 1,
       "position": [
         860,
-        960
+        1440
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -264,7 +264,7 @@
       "typeVersion": 2,
       "position": [
         1020,
-        960
+        1440
       ]
     },
     {
@@ -279,7 +279,7 @@
       "typeVersion": 3.2,
       "position": [
         1140,
-        960
+        1440
       ]
     },
     {
@@ -293,7 +293,7 @@
       "typeVersion": 2,
       "position": [
         1840,
-        960
+        1440
       ]
     },
     {
@@ -308,7 +308,7 @@
       "typeVersion": 1,
       "position": [
         2000,
-        960
+        1440
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -327,7 +327,7 @@
       "typeVersion": 1,
       "position": [
         2160,
-        960
+        1440
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -346,7 +346,7 @@
       "typeVersion": 2,
       "position": [
         700,
-        1080
+        1620
       ]
     },
     {
@@ -361,7 +361,7 @@
       "typeVersion": 1,
       "position": [
         1080,
-        1080
+        1620
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -380,7 +380,7 @@
       "typeVersion": 2,
       "position": [
         700,
-        1140
+        1780
       ]
     },
     {
@@ -394,7 +394,7 @@
       "typeVersion": 2,
       "position": [
         700,
-        1260
+        1940
       ]
     },
     {
@@ -411,7 +411,7 @@
       "typeVersion": 4.2,
       "position": [
         520,
-        120
+        180
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -430,7 +430,7 @@
       "typeVersion": 2,
       "position": [
         650,
-        120
+        180
       ]
     },
     {
@@ -445,7 +445,7 @@
       "typeVersion": 3.2,
       "position": [
         780,
-        120
+        180
       ]
     },
     {
@@ -465,7 +465,7 @@
       "typeVersion": 4.2,
       "position": [
         910,
-        120
+        180
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -487,7 +487,7 @@
       "typeVersion": 4.2,
       "position": [
         520,
-        240
+        360
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -506,7 +506,7 @@
       "typeVersion": 2,
       "position": [
         650,
-        240
+        360
       ]
     },
     {
@@ -521,7 +521,7 @@
       "typeVersion": 3.2,
       "position": [
         780,
-        240
+        360
       ]
     },
     {
@@ -541,7 +541,7 @@
       "typeVersion": 4.2,
       "position": [
         910,
-        240
+        360
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -563,7 +563,7 @@
       "typeVersion": 4.2,
       "position": [
         520,
-        360
+        540
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -582,7 +582,7 @@
       "typeVersion": 2,
       "position": [
         650,
-        360
+        540
       ]
     },
     {
@@ -597,7 +597,7 @@
       "typeVersion": 3.2,
       "position": [
         780,
-        360
+        540
       ]
     },
     {
@@ -617,7 +617,7 @@
       "typeVersion": 4.2,
       "position": [
         910,
-        360
+        540
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -639,7 +639,7 @@
       "typeVersion": 4.2,
       "position": [
         520,
-        480
+        720
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -658,7 +658,7 @@
       "typeVersion": 2,
       "position": [
         650,
-        480
+        720
       ]
     },
     {
@@ -673,7 +673,7 @@
       "typeVersion": 3.2,
       "position": [
         780,
-        480
+        720
       ]
     },
     {
@@ -693,7 +693,7 @@
       "typeVersion": 4.2,
       "position": [
         910,
-        480
+        720
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -715,7 +715,7 @@
       "typeVersion": 4.2,
       "position": [
         520,
-        600
+        900
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -734,7 +734,7 @@
       "typeVersion": 2,
       "position": [
         650,
-        600
+        900
       ]
     },
     {
@@ -749,7 +749,7 @@
       "typeVersion": 3.2,
       "position": [
         780,
-        600
+        900
       ]
     },
     {
@@ -769,7 +769,7 @@
       "typeVersion": 4.2,
       "position": [
         910,
-        600
+        900
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -791,7 +791,7 @@
       "typeVersion": 4.2,
       "position": [
         520,
-        840
+        1260
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -810,7 +810,7 @@
       "typeVersion": 2,
       "position": [
         650,
-        840
+        1260
       ]
     },
     {
@@ -825,7 +825,7 @@
       "typeVersion": 3.2,
       "position": [
         780,
-        840
+        1260
       ]
     },
     {
@@ -845,7 +845,7 @@
       "typeVersion": 4.2,
       "position": [
         910,
-        840
+        1260
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -867,7 +867,7 @@
       "typeVersion": 4.2,
       "position": [
         520,
-        1080
+        1620
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -886,7 +886,7 @@
       "typeVersion": 2,
       "position": [
         650,
-        1080
+        1620
       ]
     },
     {
@@ -901,7 +901,7 @@
       "typeVersion": 3.2,
       "position": [
         780,
-        1080
+        1620
       ]
     },
     {
@@ -921,7 +921,7 @@
       "typeVersion": 4.2,
       "position": [
         910,
-        1080
+        1620
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -943,7 +943,7 @@
       "typeVersion": 4.2,
       "position": [
         1180,
-        960
+        1440
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -962,7 +962,7 @@
       "typeVersion": 2,
       "position": [
         1310,
-        960
+        1440
       ]
     },
     {
@@ -977,7 +977,7 @@
       "typeVersion": 3.2,
       "position": [
         1440,
-        960
+        1440
       ]
     },
     {
@@ -997,7 +997,7 @@
       "typeVersion": 4.2,
       "position": [
         1570,
-        960
+        1440
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -1016,8 +1016,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1280,
-        300
+        1340,
+        420
       ]
     }
   ],

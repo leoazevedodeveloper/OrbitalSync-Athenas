@@ -1,102 +1,11 @@
 import json
 import os
 import shutil
-import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set, Tuple
-
-from orbital.services.memory.salience import (
-    is_selective_remote_enabled,
-    should_sync_to_remote_memory,
-)
-from orbital.services.supabase.chat_history import (
-    append_chat_message,
-    fetch_recent_messages,
-    search_messages,
-)
-from orbital.settings import SETTINGS
+from typing import Any, Dict, List, Optional
 
 SINGLE_PROJECT_NAME = "OrbitalSync"
-
-
-def _memory_backend() -> str:
-    return str(SETTINGS.get("memory_backend", "supabase")).strip().lower()
-
-
-def _supabase_enabled() -> bool:
-    return _memory_backend() in ("supabase", "both")
-
-
-def _brain_enabled() -> bool:
-    return _memory_backend() in ("brain", "both")
-
-
-def _remote_memory_followup(
-    project: str,
-    sender: str,
-    text: str,
-    *,
-    mime_type: Optional[str] = None,
-    image_relpath: Optional[str] = None,
-) -> None:
-    """Gate Ollama + Supabase fora do caminho crítico (evita atrasar Gemini Live / chat)."""
-    if not _supabase_enabled():
-        return
-    try:
-        selective = is_selective_remote_enabled()
-        sync_remote, mem_reason = should_sync_to_remote_memory(
-            sender,
-            text,
-            selective=selective,
-            mime_type=mime_type,
-            image_relpath=image_relpath,
-        )
-        if not sync_remote:
-            if selective and (os.getenv("ORBITAL_MEMORY_SALIENCE_DEBUG") or "").strip().lower() in (
-                "1",
-                "true",
-                "yes",
-            ):
-                print(
-                    f"[MEMORY] Remoto omitido ({mem_reason}) "
-                    f"sender={sender!r} len={len((text or '').strip())}"
-                )
-            return
-
-        ok = append_chat_message(
-            project,
-            sender,
-            text,
-            mime_type=mime_type,
-            image_relpath=image_relpath,
-            memory_salience=mem_reason,
-        )
-        if not ok:
-            print(
-                f"[ProjectManager] Mensagem aprovada ({mem_reason}) ficou só no disco — Supabase erro/off."
-            )
-    except Exception as e:
-        print(f"[ProjectManager] [ERR] follow-up memória remota: {e!r}")
-
-
-def _entry_fingerprint(entry: Dict[str, Any]) -> Tuple[float, str]:
-    ts = float(entry.get("timestamp", 0) or 0.0)
-    text = str(entry.get("text", "") or "")[:160]
-    return (round(ts, 2), text)
-
-
-def _merge_search_matches(a: List[dict], b: List[dict], lim: int) -> List[dict]:
-    seen: Set[Tuple[float, str]] = set()
-    merged: List[dict] = []
-    for entry in a + b:
-        fp = _entry_fingerprint(entry)
-        if fp in seen:
-            continue
-        seen.add(fp)
-        merged.append(entry)
-    merged.sort(key=lambda e: float(e.get("timestamp", 0) or 0.0))
-    return merged[-lim:]
 
 
 class ProjectManager:
@@ -202,7 +111,7 @@ class ProjectManager:
         mime_type: Optional[str] = None,
         image_relpath: Optional[str] = None,
     ):
-        """Transcrição completa no JSONL de imediato; gate Ollama + Supabase em thread (não bloqueia a IA)."""
+        """Transcrição completa no JSONL local."""
         log_file = self._chat_log_path()
         entry = {
             "timestamp": time.time(),
@@ -220,16 +129,6 @@ class ProjectManager:
                 f.write(json.dumps(entry) + "\n")
         except OSError as e:
             print(f"[ProjectManager] [ERR] Falha ao gravar transcript local: {e}")
-            return
-
-        project = self.current_project
-        threading.Thread(
-            target=_remote_memory_followup,
-            args=(project, sender, text),
-            kwargs={"mime_type": mime_type, "image_relpath": image_relpath},
-            daemon=True,
-            name="orbital-remote-memory",
-        ).start()
 
     def save_cad_artifact(self, source_path: str, prompt: str):
         if not os.path.exists(source_path):
@@ -332,33 +231,17 @@ class ProjectManager:
         return local
 
     def get_live_startup_history(self, limit: int = 10):
-        """
-        Contexto injectado na sessão Live (arranque/reconnect).
-        Respeita memory_backend: supabase (primeiro Supabase, fallback JSONL),
-        brain (só JSONL local), both (Supabase primeiro, fallback JSONL).
-        """
-        backend = _memory_backend()
-
-        if _supabase_enabled():
-            remote = fetch_recent_messages(self.current_project, limit)
-            if remote is not None:
-                print(
-                    f"[ProjectManager] Live context: {len(remote)} msg(s) via Supabase "
-                    f"(projeto={self.current_project!r}, limit={limit}, backend={backend})"
-                )
-                return remote
-
+        """Últimas N mensagens do JSONL local para injeção no arranque."""
         log_file = self._chat_log_path()
         if log_file.is_file():
             local = self._tail_jsonl_messages(log_file, limit)
             if local:
                 print(
                     f"[ProjectManager] Live context: {len(local)} msg(s) via JSONL local "
-                    f"({log_file.name}, limit={limit}, backend={backend})"
+                    f"({log_file.name}, limit={limit})"
                 )
                 return local
-
-        print(f"[ProjectManager] Live context: 0 msg (backend={backend}).")
+        print("[ProjectManager] Live context: 0 msg.")
         return []
 
     def search_chat_history(self, query: str, limit: int = 10):
@@ -366,31 +249,12 @@ class ProjectManager:
         lim = max(1, min(50, int(limit)))
         if not q:
             return []
-
-        backend = _memory_backend()
         log_file = self._chat_log_path()
         local_hits = self._search_jsonl_tokens(log_file, q, max(lim * 4, 24))
-
-        if not _supabase_enabled():
-            out = local_hits[-lim:] if local_hits else []
-            print(
-                f"[ProjectManager] Busca histórico: {len(out)} match(es) local "
-                f"(query={q!r}, limit={lim}, backend={backend})"
-            )
-            return out
-
-        remote = search_messages(self.current_project, q, lim)
-        if remote is None:
-            out = local_hits[-lim:] if local_hits else []
-            print(
-                f"[ProjectManager] Busca histórico: {len(out)} match(es) disco "
-                f"(query={q!r}, limit={lim}, backend={backend})"
-            )
-            return out
-
-        merged = _merge_search_matches(local_hits, remote, lim)
+        out = local_hits[-lim:] if local_hits else []
         print(
-            f"[ProjectManager] Busca histórico: {len(merged)} match(es) híbrido "
-            f"(query={q!r}, limit={lim}, backend={backend})"
+            f"[ProjectManager] Busca histórico: {len(out)} match(es) local "
+            f"(query={q!r}, limit={lim})"
         )
-        return merged
+        return out
+

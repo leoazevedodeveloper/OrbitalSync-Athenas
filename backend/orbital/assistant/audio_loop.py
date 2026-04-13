@@ -65,7 +65,6 @@ from .constants import (
 )
 from .gemini_setup import build_live_config, get_gemini_client
 from .live_utils import (
-    chat_startup_history_limit,
     iter_leaf_exceptions,
     normalize_reminder_iso,
     parse_reminder_starts_at,
@@ -163,6 +162,12 @@ class AudioLoop:
         self._speech_utterance_started_at = None
         # Para evitar corte repetido: só interrompe playback 1 vez por utterance.
         self._did_interrupt_for_current_utterance = False
+
+        # ── Wake-word gate ("Athenas") ──
+        # Só repassa áudio/transcrição de saída quando o wake word foi detectado
+        # na transcrição de entrada da utterance corrente.
+        self._ww_detected = False          # True quando "athenas" foi ouvido nesta utterance
+        self._ww_input_buffer = ""         # Acumula input_transcription para checagem
         
         # True após primeira sessão Live que passou pelo inject de histórico (para não confundir retry com reconnect).
         self._had_successful_live_connect = False
@@ -191,76 +196,43 @@ class AudioLoop:
             pass
 
     async def _inject_startup_context(self, *, is_reconnect: bool = False):
-        """Inject startup/reconnect context based on the active memory_backend."""
-        from orbital.settings import SETTINGS
-
-        backend = str(SETTINGS.get("memory_backend", "supabase")).strip().lower()
+        """Inject startup/reconnect context from the local brain vault (Obsidian)."""
         injected = False
 
-        # --- Chat transcript (supabase / both / brain fallback to JSONL) ---
-        if backend in ("supabase", "both"):
-            history = self.project_manager.get_live_startup_history(
-                limit=chat_startup_history_limit()
+        brain_parts: list[str] = []
+        loaded_files: list[str] = []
+        for section, _label in [
+            ("06 - State", "CURRENT STATE"),
+            ("01 - Memoria", "MEMORY"),
+        ]:
+            for md in sorted((self.brain.vault / section).glob("*.md")):
+                try:
+                    content = md.read_text(encoding="utf-8").strip()
+                    if content and len(content) > 10:
+                        brain_parts.append(content)
+                        loaded_files.append(f"{section}/{md.name}")
+                except Exception:
+                    pass
+        if brain_parts:
+            brain_ctx = (
+                "Context from your brain vault (current state + memory). "
+                "This is what you already know about Leo and the current situation:\n\n"
+                + "\n\n---\n\n".join(brain_parts)
             )
-            if history:
-                prefix = (
-                    "Connection was lost and re-established. Recent persisted transcript below.\n\n"
-                    if is_reconnect
-                    else "Persisted project chat transcript. Factual record of prior turns with Leo in this project. "
-                    "Use it when he asks about the past or for consistency; do not invent lines outside this log.\n\n"
-                )
-                context_msg = prefix
-                for entry in history:
-                    sender = entry.get("sender", "Unknown")
-                    text = entry.get("text", "")
-                    context_msg += f"[{sender}]: {text}\n"
-                if is_reconnect:
-                    context_msg += "\nWhen Leo asks about earlier topics, use the transcript above."
-
-                label = "RECONNECT" if is_reconnect else "MEMORY"
-                print(f"[ADA DEBUG] [{label}] Injecting chat history ({len(history)} messages, backend={backend})")
-                async with self._session_send_lock:
-                    await self.session.send(input=context_msg, end_of_turn=True)
-                self._startup_output_turns_to_skip = 1
-                self.clear_audio_queue()
-                injected = True
-
-        # --- Brain vault context (brain / both) ---
-        if backend in ("brain", "both"):
-            brain_parts: list[str] = []
-            loaded_files: list[str] = []
-            for section, _label in [
-                ("06 - State", "CURRENT STATE"),
-                ("01 - Memoria", "MEMORY"),
-            ]:
-                for md in sorted((self.brain.vault / section).glob("*.md")):
-                    try:
-                        content = md.read_text(encoding="utf-8").strip()
-                        if content and len(content) > 10:
-                            brain_parts.append(content)
-                            loaded_files.append(f"{section}/{md.name}")
-                    except Exception:
-                        pass
-            if brain_parts:
-                brain_ctx = (
-                    "Context from your brain vault (current state + memory). "
-                    "This is what you already know about Leo and the current situation:\n\n"
-                    + "\n\n---\n\n".join(brain_parts)
-                )
-                _mem_logger.info(
-                    "STARTUP  injecting brain context: %d notes, %d chars, files=%s",
-                    len(brain_parts), len(brain_ctx), loaded_files,
-                )
-                print(f"[ADA DEBUG] [BRAIN] Injecting brain context at startup ({len(brain_ctx)} chars, backend={backend})")
-                async with self._session_send_lock:
-                    await self.session.send(input=brain_ctx, end_of_turn=True)
-                self._startup_output_turns_to_skip += 1
-                self.clear_audio_queue()
-                injected = True
+            _mem_logger.info(
+                "STARTUP  injecting brain context: %d notes, %d chars, files=%s",
+                len(brain_parts), len(brain_ctx), loaded_files,
+            )
+            print(f"[ADA DEBUG] [BRAIN] Injecting brain context at startup ({len(brain_ctx)} chars)")
+            async with self._session_send_lock:
+                await self.session.send(input=brain_ctx, end_of_turn=True)
+            self._startup_output_turns_to_skip += 1
+            self.clear_audio_queue()
+            injected = True
 
         if not injected:
             label = "RECONNECT" if is_reconnect else "MEMORY"
-            print(f"[ADA DEBUG] [{label}] Nenhum contexto para injetar (backend={backend}).")
+            print(f"[ADA DEBUG] [{label}] Nenhum contexto para injetar.")
 
     def flush_chat(self):
         """Forces the current chat buffer to be written to log."""
@@ -793,6 +765,9 @@ class AudioLoop:
                         self._is_speaking = True
                         self._speech_utterance_started_at = time.time()
                         self._did_interrupt_for_current_utterance = False
+                        # Reset wake-word gate para nova utterance
+                        self._ww_detected = False
+                        self._ww_input_buffer = ""
                         print(f"[ADA DEBUG] [VAD] Speech Detected (RMS: {rms}). Sending Video Frame.")
                         
                         # Send ONE frame
@@ -814,6 +789,9 @@ class AudioLoop:
                             self._silence_start_time = None
                             self._speech_utterance_started_at = None
                             self._did_interrupt_for_current_utterance = False
+                            # Reset wake-word para próxima utterance
+                            self._ww_detected = False
+                            self._ww_input_buffer = ""
 
             except Exception as e:
                 print(f"Error reading audio: {e}")
@@ -1062,7 +1040,9 @@ class AudioLoop:
                 async for response in turn:
                     # 1. Handle Audio Data
                     if data := response.data:
-                        if not drop_assistant_output:
+                        # Wake-word gate: só toca áudio se wake word foi detectado (ou se é chat texto).
+                        ww_allow = self._chat_utterance_pending or self._ww_detected
+                        if not drop_assistant_output and ww_allow:
                             await self._enqueue_audio_chunk_low_latency(data)
                         # NOTE: 'continue' removed here to allow processing transcription/tools in same packet
 
@@ -1078,58 +1058,82 @@ class AudioLoop:
                                     if transcript.startswith(self._last_input_transcription):
                                         delta = transcript[len(self._last_input_transcription):]
                                     self._last_input_transcription = transcript
-                                    
+
                                     # Only send if there's new text
                                     if delta:
-                                        # Voz do microfone: interrompe playback. Chat (texto/imagem): não —
-                                        # o Live também emite input_transcription para o prompt escrito, o que
-                                        # apagava o áudio da resposta (parece que a IA "some").
-                                        # Gatilho extra: só interrompe se o VAD do microfone indicar fala.
-                                        # Desabilitado: interromper playback via input_transcription
-                                        # está causando cortes severos na fala da IA.
-
-                                        # Send to frontend (Streaming)
-                                        if self.on_transcription:
-                                            self.on_transcription({"sender": "User", "text": delta})
-                                        
-                                        # Buffer for Logging
-                                        if self.chat_buffer["sender"] != "User":
-                                            # Flush previous if exists
-                                            if self.chat_buffer["sender"] and self.chat_buffer["text"].strip():
-                                                self.project_manager.log_chat(self.chat_buffer["sender"], self.chat_buffer["text"])
-                                            # Start new
-                                            self.chat_buffer = {"sender": "User", "text": delta}
+                                        # ── Wake-word gate ──
+                                        # Acumula transcrição silenciosamente para detectar "athenas".
+                                        # Só repassa pro frontend/log DEPOIS que o wake word for encontrado.
+                                        # Chat via texto (image/text) bypassa o gate.
+                                        if not self._chat_utterance_pending:
+                                            self._ww_input_buffer += delta
+                                            if not self._ww_detected:
+                                                buf_lower = self._ww_input_buffer.lower()
+                                                if any(w in buf_lower for w in ("athenas", "atenas", "atena")):
+                                                    self._ww_detected = True
+                                                    print("[ADA DEBUG] [WW] Wake-word 'Athenas' detectado na utterance.")
+                                                    # Envia o buffer acumulado (a frase completa até agora) pro frontend
+                                                    if self.on_transcription:
+                                                        self.on_transcription({"sender": "User", "text": self._ww_input_buffer})
+                                                    self.chat_buffer = {"sender": "User", "text": self._ww_input_buffer}
+                                                else:
+                                                    # Sem wake word — descarta silenciosamente
+                                                    pass
+                                            else:
+                                                # Wake word já detectado — repassa normalmente
+                                                if self.on_transcription:
+                                                    self.on_transcription({"sender": "User", "text": delta})
+                                                if self.chat_buffer["sender"] != "User":
+                                                    if self.chat_buffer["sender"] and self.chat_buffer["text"].strip():
+                                                        self.project_manager.log_chat(self.chat_buffer["sender"], self.chat_buffer["text"])
+                                                    self.chat_buffer = {"sender": "User", "text": delta}
+                                                else:
+                                                    self.chat_buffer["text"] += delta
                                         else:
-                                            # Append
-                                            self.chat_buffer["text"] += delta
-                        
+                                            # Chat texto — sempre repassa
+                                            if self.on_transcription:
+                                                self.on_transcription({"sender": "User", "text": delta})
+                                            if self.chat_buffer["sender"] != "User":
+                                                if self.chat_buffer["sender"] and self.chat_buffer["text"].strip():
+                                                    self.project_manager.log_chat(self.chat_buffer["sender"], self.chat_buffer["text"])
+                                                self.chat_buffer = {"sender": "User", "text": delta}
+                                            else:
+                                                self.chat_buffer["text"] += delta
+
                         if response.server_content.output_transcription:
                             transcript = response.server_content.output_transcription.text
                             if transcript and not drop_assistant_output:
-                                # Skip if this is an exact duplicate event
-                                if transcript != self._last_output_transcription:
-                                    # Calculate delta (Gemini may send cumulative or chunk-based text)
-                                    delta = transcript
-                                    if transcript.startswith(self._last_output_transcription):
-                                        delta = transcript[len(self._last_output_transcription):]
+                                # ── Wake-word gate: suprime saída se wake word não foi dito ──
+                                # Chat via texto sempre passa (bypass).
+                                if not self._chat_utterance_pending and not self._ww_detected:
+                                    # Não repassa resposta — wake word não detectado.
+                                    # Avança _last_output_transcription para manter o delta correto.
                                     self._last_output_transcription = transcript
-                                    
-                                    # Only send if there's new text
-                                    if delta:
-                                        # Send to frontend (Streaming)
-                                        if self.on_transcription:
-                                            self.on_transcription({"sender": "ATHENAS", "text": delta})
-                                        
-                                        # Buffer for Logging
-                                        if self.chat_buffer["sender"] != "ATHENAS":
-                                            # Flush previous
-                                            if self.chat_buffer["sender"] and self.chat_buffer["text"].strip():
-                                                self.project_manager.log_chat(self.chat_buffer["sender"], self.chat_buffer["text"])
-                                            # Start new
-                                            self.chat_buffer = {"sender": "ATHENAS", "text": delta}
-                                        else:
-                                            # Append
-                                            self.chat_buffer["text"] += delta
+                                else:
+                                    # Skip if this is an exact duplicate event
+                                    if transcript != self._last_output_transcription:
+                                        # Calculate delta (Gemini may send cumulative or chunk-based text)
+                                        delta = transcript
+                                        if transcript.startswith(self._last_output_transcription):
+                                            delta = transcript[len(self._last_output_transcription):]
+                                        self._last_output_transcription = transcript
+
+                                        # Only send if there's new text
+                                        if delta:
+                                            # Send to frontend (Streaming)
+                                            if self.on_transcription:
+                                                self.on_transcription({"sender": "ATHENAS", "text": delta})
+
+                                            # Buffer for Logging
+                                            if self.chat_buffer["sender"] != "ATHENAS":
+                                                # Flush previous
+                                                if self.chat_buffer["sender"] and self.chat_buffer["text"].strip():
+                                                    self.project_manager.log_chat(self.chat_buffer["sender"], self.chat_buffer["text"])
+                                                # Start new
+                                                self.chat_buffer = {"sender": "ATHENAS", "text": delta}
+                                            else:
+                                                # Append
+                                                self.chat_buffer["text"] += delta
                         
                         # Flush buffer on turn completion if needed, 
                         # but usually better to wait for sender switch or explicit end.
@@ -1139,7 +1143,23 @@ class AudioLoop:
                     if response.tool_call:
                         print("The tool was called")
                         function_responses = []
-                        if drop_assistant_output:
+                        # Wake-word gate: sem wake word, ignora tool calls de voz
+                        ww_block_tools = (not self._chat_utterance_pending and not self._ww_detected)
+                        if ww_block_tools:
+                            for fc in response.tool_call.function_calls:
+                                function_responses.append(
+                                    types.FunctionResponse(
+                                        id=fc.id, name=fc.name,
+                                        response={"result": "Ignored — wake word not detected."},
+                                    )
+                                )
+                            if function_responses:
+                                async with self._session_send_lock:
+                                    await self.session.send_tool_response(
+                                        function_responses=function_responses
+                                    )
+                            continue
+                        elif drop_assistant_output:
                             # Turno de warmup após injeção de histórico: não executar tools automaticamente.
                             # Sem isso, a sessão pode disparar `generate_image`/outras ações ao iniciar.
                             for fc in response.tool_call.function_calls:

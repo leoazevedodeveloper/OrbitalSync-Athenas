@@ -155,6 +155,14 @@ def build_live_config() -> types.LiveConnectConfig:
         "Use 'semantic' for vague/conceptual recall; 'keyword' or omit mode for exact literals."
     )
 
+    blocks.append(
+        "WAKE WORD — CRITICAL RULE:\n"
+        "You MUST only respond when the user addresses you by saying 'Athenas' (or close variants like "
+        "'Atenas', 'atena'). If someone speaks without saying your name, stay COMPLETELY SILENT — "
+        "do not respond, do not acknowledge, do not make any sound. "
+        "This applies to voice input only. Text messages sent via chat always deserve a response."
+    )
+
     system_instruction = "\n\n".join(blocks)
     _mem_logger.info(
         "SYSINSTRUCTION  built from vault: core=%d skills=%d system=%d total=%d chars",

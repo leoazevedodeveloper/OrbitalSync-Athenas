@@ -1,7 +1,5 @@
-"""Utilitários partilhados pelo loop Gemini Live (contexto, datas lembrete, exceções aninhadas)."""
+"""Utilitários partilhados pelo loop Gemini Live (datas lembrete, exceções aninhadas)."""
 from __future__ import annotations
-
-import os
 
 try:
     from builtins import BaseExceptionGroup
@@ -9,23 +7,6 @@ except ImportError:
     from exceptiongroup import BaseExceptionGroup
 from datetime import datetime
 from zoneinfo import ZoneInfo
-
-
-def chat_startup_history_limit() -> int:
-    """Últimas N mensagens injectadas na sessão Live ao ligar / reconnect."""
-    if "ORBITAL_CHAT_STARTUP_CONTEXT_LIMIT" in os.environ:
-        raw = (os.getenv("ORBITAL_CHAT_STARTUP_CONTEXT_LIMIT") or "").strip()
-        if raw:
-            try:
-                return max(10, min(500, int(raw)))
-            except ValueError:
-                pass
-    try:
-        from orbital.settings import SETTINGS
-
-        return max(10, min(500, int(SETTINGS.get("chat_startup_context_limit", 100))))
-    except Exception:
-        return 100
 
 
 def iter_leaf_exceptions(exc: BaseException):

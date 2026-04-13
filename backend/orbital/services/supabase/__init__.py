@@ -1,1 +1,1 @@
-"""Supabase: config remota (PostgREST), histórico de chat e embeddings."""
+"""Supabase: config remota (PostgREST), webhooks e launch apps."""

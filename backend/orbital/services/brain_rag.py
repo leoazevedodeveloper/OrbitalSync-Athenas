@@ -11,9 +11,45 @@ from typing import Any, List, Optional
 from urllib.parse import quote
 
 import httpx
+from google.genai import types
 
-from orbital.services.supabase.chat_embeddings import EMBEDDING_DIM, embed_text
 from orbital.services.supabase.remote_config import _base_url, _rest_headers, supabase_config_enabled
+
+EMBEDDING_MODEL = "gemini-embedding-001"
+EMBEDDING_DIM = 768
+_DEFAULT_MAX_EMBED_CHARS = 8000
+
+
+def _get_genai_client():
+    from orbital.assistant.gemini_setup import get_gemini_client
+    return get_gemini_client()
+
+
+def embed_text(text: str) -> Optional[list[float]]:
+    """Retorna vetor 768d via Gemini ou None."""
+    raw = (text or "").strip()
+    if not raw:
+        return None
+    if len(raw) > _DEFAULT_MAX_EMBED_CHARS:
+        raw = raw[:_DEFAULT_MAX_EMBED_CHARS]
+
+    client = _get_genai_client()
+    if client is None:
+        return None
+    try:
+        res = client.models.embed_content(
+            model=EMBEDDING_MODEL,
+            contents=raw,
+            config=types.EmbedContentConfig(output_dimensionality=EMBEDDING_DIM),
+        )
+        vals = res.embeddings[0].values
+        if not vals or len(vals) != EMBEDDING_DIM:
+            logger.warning("embed_text dim=%s (expected %s)", len(vals) if vals else 0, EMBEDDING_DIM)
+            return None
+        return list(vals)
+    except Exception as e:
+        logger.error("embed_text failed: %s", e)
+        return None
 
 logger = logging.getLogger("orbital.brain")
 

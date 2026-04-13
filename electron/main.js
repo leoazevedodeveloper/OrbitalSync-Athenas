@@ -45,7 +45,6 @@ app.commandLine.appendSwitch('ignore-gpu-blocklist');
 let mainWindow;
 let pythonProcess;
 let cloudflaredProcess;
-let ollamaProcess;
 
 const AMBIENTE_DIR = path.join(__dirname, '../dev/ambiente');
 
@@ -176,46 +175,6 @@ function startCloudflaredTunnel() {
     });
 }
 
-/**
- * Servidor local Ollama (API em :11434): `ollama serve`.
- * Desligar: ORBITAL_SKIP_OLLAMA=1
- * Se a porta 11434 já estiver em uso, não inicia outro processo (e não encerra o existente ao sair).
- */
-function startOllama() {
-    if (process.env.ORBITAL_SKIP_OLLAMA === '1') {
-        writeOrbitalLog('info', '[Ollama] Ignorado (ORBITAL_SKIP_OLLAMA=1).');
-        return;
-    }
-    checkBackendPort(11434).then((portInUse) => {
-        if (portInUse) {
-            writeOrbitalLog(
-                'info',
-                '[Ollama] Porta 11434 em uso — servidor já ativo; não iniciando segundo processo.'
-            );
-            return;
-        }
-        writeOrbitalLog('info', '[Ollama] Iniciando ollama serve…');
-        ollamaProcess = spawn('ollama', ['serve'], {
-            shell: false,
-            windowsHide: true,
-        });
-
-        ollamaProcess.stdout.on('data', (data) => {
-            writeOrbitalLog('info', String(data));
-        });
-        ollamaProcess.stderr.on('data', (data) => {
-            writeOrbitalLog('error', String(data));
-        });
-        ollamaProcess.on('exit', (code, signal) => {
-            writeOrbitalLog('warn', `[Ollama] Processo terminou (code=${code}, signal=${signal}).`);
-            ollamaProcess = null;
-        });
-        ollamaProcess.on('error', (err) => {
-            writeOrbitalLog('error', `[Ollama] Falha ao iniciar: ${err.message}`);
-            ollamaProcess = null;
-        });
-    });
-}
 
 /** Caminho do CLI: ORBITAL_DOCKER_CLI → docker.exe do Docker Desktop (Windows) → `docker` no PATH */
 let _dockerCliResolved;
@@ -520,7 +479,6 @@ app.whenReady().then(() => {
 
     startDockerContainers();
     startCloudflaredTunnel();
-    startOllama();
 
     /**
      * Interface primeiro, backend em paralelo: o renderer mostra o boot real enquanto o Python sobe.
@@ -574,21 +532,8 @@ app.on('window-all-closed', () => {
 });
 
 app.on('will-quit', () => {
-    writeOrbitalLog('info', 'App closing... Encerrando backend, Ollama (se iniciado por aqui) e Cloudflared.');
+    writeOrbitalLog('info', 'App closing... Encerrando backend e Cloudflared.');
     stopDockerContainersOnQuit();
-
-    if (ollamaProcess) {
-        if (process.platform === 'win32') {
-            try {
-                execSync(`taskkill /pid ${ollamaProcess.pid} /f /t`);
-            } catch (e) {
-                writeOrbitalLog('error', `Falha ao encerrar Ollama: ${e.message}`);
-            }
-        } else {
-            ollamaProcess.kill('SIGKILL');
-        }
-        ollamaProcess = null;
-    }
 
     if (cloudflaredProcess) {
         if (process.platform === 'win32') {

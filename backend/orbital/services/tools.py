@@ -114,7 +114,7 @@ trigger_webhook_tool = {
 search_chat_history_tool = {
     "name": "search_chat_history",
     "description": (
-        "Searches chat history: semantic cloud recall plus keyword scan of the full local transcript. "
+        "Searches chat history via keyword scan of the full local transcript (chat_history.jsonl). "
         "Use when Leo asks if you remember a topic; natural language or keywords both work."
     ),
     "parameters": {
