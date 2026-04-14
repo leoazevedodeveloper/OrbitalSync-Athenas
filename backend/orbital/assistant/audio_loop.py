@@ -1298,6 +1298,7 @@ class AudioLoop:
                                         starts_iso_norm = iso
 
                                     wh_payload: dict = {
+                                        "calendar_op": "create",
                                         "title": title,
                                         "starts_at_iso": starts_iso_norm,
                                     }

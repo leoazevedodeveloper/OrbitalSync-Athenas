@@ -1,138 +1,52 @@
-"""Gera spotify_athena_workflow.json nesta pasta (nós nativos Spotify + Switch)."""
+"""Gera spotify_athena_workflow.json — v2.
+
+Mudanças vs v1:
+- Device chain centralizado (1x em vez de 7x duplicados)
+- HTTP direto com device_id (elimina Transfer e race condition)
+- playTrack via PUT /play com uris[] (sem hack queue + next)
+- respond_body resiliente com try/catch
+- ~28 nós (era ~50+)
+"""
 import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
 map_js = (ROOT / "map_action.js").read_text(encoding="utf-8")
 
-switch_output_expr = """={{ ({
-  pause: 0,
-  resume: 1,
-  nextSong: 2,
-  previousSong: 3,
-  volume: 4,
-  startMusic: 5,
-  listPlaylists: 6,
-  switchPlaylist: 7,
-  playTrack: 8,
-  playGenre: 9,
-  healthcheck: 10,
-})[$json.spotifyOp] ?? 11 }}"""
-
-unsupported_js = """return [{
-  json: {
-    error: true,
-    message: 'Acao nao suportada pelo no nativo Spotify no n8n (ex.: shuffle, repeat). '
-      + 'Use outro fluxo com HTTP Request ou escolha: pause, play, resume, next, previous, volume, playlist, '
-      + 'list_playlists, switch_playlist, play_track, play_genre.'
-  }
-}];"""
-
-respond_body = """={{ JSON.stringify({
-  ok: $json.error !== true,
-  action: $('Map action').first().json.action,
-  spotifyOp: $('Map action').first().json.spotifyOp,
-  result: $json
-}) }}"""
-
 SPOTIFY_CRED = {"spotifyOAuth2Api": {"name": "Spotify account"}}
+API = "https://api.spotify.com/v1"
 
-PICK_DEVICE_JS = r"""const root = $input.first().json || {};
-const devices = root.devices || root.body?.devices || [];
-if (!devices.length) {
-  return [{
-    json: {
-      error: true,
-      message:
-        'Nenhum dispositivo Spotify disponivel. Abra o app Spotify no celular, PC ou Web Player '
-        + '(play.spotify.com) e faca login nesta mesma conta; depois tente de novo.'
-    }
-  }];
+# n8n httpRequest: retorna {statusCode, body, headers} e não lança em 4xx/5xx
+HTTP_OPTS: dict = {
+    "response": {"response": {"fullResponse": True, "neverError": True}}
 }
-const usable = devices.filter((d) => d && d.id && !d.is_restricted);
-if (!usable.length) {
-  return [{ json: { error: true, message: 'Dispositivos encontrados, mas nenhum permite reproducao.' } }];
-}
-const score = (d) => {
-  const t = String(d.type || '').toLowerCase();
-  if (t === 'computer') return 0;
-  if (t === 'smartphone') return 1;
-  if (t === 'tablet') return 2;
-  return 5;
-};
-usable.sort((a, b) => score(a) - score(b));
-const active = usable.find((d) => d.is_active);
-const pick = active || usable[0];
-return [{
-  json: {
-    deviceId: pick.id,
-    deviceName: pick.name || '',
-    deviceType: pick.type || ''
-  }
-}];"""
-
-MERGE_CTX_PLAYTRACK_JS = r"""const prev = $('Pick track URI').first().json || {};
-const dev = $input.first().json || {};
-return [{ json: { ...prev, ...dev, trackUri: prev.trackUri } }];"""
 
 
-def spotify_node(_id: str, name: str, operation: str, position: list, extra: dict | None = None):
-    p = {"resource": "player", "operation": operation}
-    if extra:
-        p.update(extra)
+# ── Expression helper ──────────────────────────────────────────────
+
+
+def n8n(js: str) -> str:
+    """Gera expressão n8n: ={{ <js> }}"""
+    return "={{ " + js + " }}"
+
+
+# Referências reutilizadas nas expressões
+_DEV = "$('Pick device').first().json.deviceId"
+_MAP = "$('Map action').first().json"
+_BODY = f"{_MAP}.body"
+
+
+def _player_url(endpoint: str) -> str:
+    """URL Spotify Player com device_id dinâmico."""
+    return n8n(f"'{API}/me/player/{endpoint}?device_id=' + {_DEV}")
+
+
+# ── Node constructors ─────────────────────────────────────────────
+
+
+def _code(_id: str, name: str, pos: list, js: str) -> dict:
     return {
-        "parameters": p,
-        "id": _id,
-        "name": name,
-        "type": "n8n-nodes-base.spotify",
-        "typeVersion": 1,
-        "position": position,
-        "credentials": SPOTIFY_CRED,
-    }
-
-
-def http_devices_node(_id: str, name: str, pos: list) -> dict:
-    return {
-        "parameters": {
-            "method": "GET",
-            "url": "https://api.spotify.com/v1/me/player/devices",
-            "authentication": "predefinedCredentialType",
-            "nodeCredentialType": "spotifyOAuth2Api",
-            "options": {},
-        },
-        "id": _id,
-        "name": name,
-        "type": "n8n-nodes-base.httpRequest",
-        "typeVersion": 4.2,
-        "position": pos,
-        "credentials": SPOTIFY_CRED,
-    }
-
-
-def http_transfer_node(_id: str, name: str, pos: list) -> dict:
-    return {
-        "parameters": {
-            "method": "PUT",
-            "url": "https://api.spotify.com/v1/me/player",
-            "authentication": "predefinedCredentialType",
-            "nodeCredentialType": "spotifyOAuth2Api",
-            "sendBody": True,
-            "specifyBody": "json",
-            "jsonBody": "={{ JSON.stringify({ device_ids: [$json.deviceId], play: false }) }}",
-            "options": {},
-        },
-        "id": _id,
-        "name": name,
-        "type": "n8n-nodes-base.httpRequest",
-        "typeVersion": 4.2,
-        "position": pos,
-        "credentials": SPOTIFY_CRED,
-    }
-
-
-def code_pick_device_node(_id: str, name: str, pos: list) -> dict:
-    return {
-        "parameters": {"mode": "runOnceForAllItems", "jsCode": PICK_DEVICE_JS},
+        "parameters": {"mode": "runOnceForAllItems", "jsCode": js},
         "id": _id,
         "name": name,
         "type": "n8n-nodes-base.code",
@@ -141,12 +55,12 @@ def code_pick_device_node(_id: str, name: str, pos: list) -> dict:
     }
 
 
-def switch_device_ok_node(_id: str, name: str, pos: list) -> dict:
+def _switch(_id: str, name: str, pos: list, n_out: int, expr: str) -> dict:
     return {
         "parameters": {
             "mode": "expression",
-            "numberOutputs": 2,
-            "output": "={{ $json.error === true ? 1 : 0 }}",
+            "numberOutputs": n_out,
+            "output": expr,
         },
         "id": _id,
         "name": name,
@@ -156,59 +70,192 @@ def switch_device_ok_node(_id: str, name: str, pos: list) -> dict:
     }
 
 
-def make_ensure_chain(suffix: str, y: int, x0: int = 520) -> tuple[list[dict], dict[str, str]]:
-    names = {
-        "get": f"Get devices · {suffix}",
-        "pick": f"Pick device · {suffix}",
-        "sw": f"Device ok · {suffix}",
-        "xfer": f"Transfer · {suffix}",
+def _http(
+    _id: str,
+    name: str,
+    pos: list,
+    method: str,
+    url: str,
+    *,
+    body_expr: str | None = None,
+) -> dict:
+    p: dict = {
+        "method": method,
+        "url": url,
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "spotifyOAuth2Api",
+        "options": HTTP_OPTS,
     }
-    ids = {
-        "get": f"http-dev-{suffix}",
-        "pick": f"code-dev-{suffix}",
-        "sw": f"sw-dev-{suffix}",
-        "xfer": f"http-xfer-{suffix}",
+    if body_expr is not None:
+        p.update(sendBody=True, specifyBody="json", jsonBody=body_expr)
+    return {
+        "parameters": p,
+        "id": _id,
+        "name": name,
+        "type": "n8n-nodes-base.httpRequest",
+        "typeVersion": 4.2,
+        "position": pos,
+        "credentials": SPOTIFY_CRED,
     }
-    chain = [
-        http_devices_node(ids["get"], names["get"], [x0, y]),
-        code_pick_device_node(ids["pick"], names["pick"], [x0 + 130, y]),
-        switch_device_ok_node(ids["sw"], names["sw"], [x0 + 260, y]),
-        http_transfer_node(ids["xfer"], names["xfer"], [x0 + 390, y]),
-    ]
-    return chain, names
 
 
-ENSURE_ROWS: list[tuple[str, int]] = [
-    ("resume", 120),
-    ("next", 240),
-    ("prev", 360),
-    ("vol", 480),
-    ("startpl", 600),
-    ("switchpl", 840),
-    ("genre", 1080),
-]
+# ── JS code blocks ────────────────────────────────────────────────
 
-ENSURE_TARGETS: dict[str, str] = {
-    "resume": "Resume",
-    "next": "Next",
-    "prev": "Previous",
-    "vol": "Volume",
-    "startpl": "Start playlist",
-    "switchpl": "Switch playlist",
-    "genre": "Play genre",
+PICK_DEVICE_JS = r"""const root = $input.first().json || {};
+const raw = root.body || root;
+
+// Detectar erro HTTP (modo fullResponse)
+if (root.statusCode && root.statusCode >= 400) {
+  const msg = (typeof raw === 'object' && raw !== null && raw.error && raw.error.message)
+    ? raw.error.message
+    : `Spotify API erro HTTP ${root.statusCode}`;
+  return [{ json: { error: true, message: msg } }];
 }
 
-ensure_nodes: list[dict] = []
-ensure_meta: list[tuple[dict[str, str], str]] = []
-for suf, y in ENSURE_ROWS:
-    chain, names = make_ensure_chain(suf, y)
-    ensure_nodes.extend(chain)
-    ensure_meta.append((names, ENSURE_TARGETS[suf]))
+const devices = Array.isArray(raw) ? raw : (raw.devices || []);
+if (!devices.length) {
+  return [{ json: { error: true, message:
+    'Nenhum dispositivo Spotify disponivel. Abra o app no celular, PC ou Web Player e tente novamente.' } }];
+}
+const usable = devices.filter(d => d && d.id && !d.is_restricted);
+if (!usable.length) {
+  return [{ json: { error: true, message: 'Dispositivos encontrados, mas nenhum permite reproducao.' } }];
+}
+const score = d => {
+  if (d.is_active) return -10;
+  const t = String(d.type || '').toLowerCase();
+  return t === 'computer' ? 0 : t === 'smartphone' ? 1 : 5;
+};
+usable.sort((a, b) => score(a) - score(b));
+const pick = usable[0];
+return [{ json: { deviceId: pick.id, deviceName: pick.name || '', deviceType: pick.type || '' } }];"""
 
-playtr_chain, playtr_names = make_ensure_chain("playtr", 960, x0=1180)
-ensure_nodes.extend(playtr_chain)
+FORMAT_PL_JS = """const items = $input.all().map(i => i.json || {});
+const playlists = items.map(p => ({
+  id: p.id, uri: p.uri, name: p.name,
+  owner: p.owner?.display_name || p.owner?.id || null,
+  tracks: p.tracks?.total ?? null, public: p.public ?? null,
+}));
+return [{ json: { playlists, total: playlists.length } }];"""
 
-nodes = [
+PROBE_JS = (
+    "return [{ json: { ok: true, probe: true,"
+    " message: 'Spotify webhook online' } }];"
+)
+
+UNSUPPORTED_JS = (
+    "return [{ json: { error: true, message: "
+    "'Acao nao suportada. Use: pause, play, resume, next, previous, volume, "
+    "list_playlists, switch_playlist, play_track, play_genre.' } }];"
+)
+
+RESOLVE_TRACK_JS = r"""const body = $('Map action').first().json.body || {};
+const rawAction = String($('Map action').first().json.action || '').trim();
+const normalizedAction = String($('Map action').first().json.normalizedAction || '').trim();
+
+const directUri = body.track_uri || body.uri || body.track_id || null;
+if (directUri) return [{ json: { trackUri: directUri } }];
+
+let q = body.track_query || body.track_name || body.track
+     || body.song || body.music || body.query || '';
+
+if (!q && (rawAction || normalizedAction)) {
+  const src = (normalizedAction || rawAction.toLowerCase())
+    .replace(/^tocar?_?musica_?/i, '')
+    .replace(/^play_?track_?/i, '')
+    .replace(/^toca_?/i, '')
+    .replace(/^play_?/i, '')
+    .replace(/_?pfv$/i, '')
+    .replace(/_?por_favor$/i, '')
+    .replace(/_/g, ' ').trim();
+  if (src) q = src;
+}
+
+const artist = String(body.artist || body.artista || '').trim();
+if (!q && !artist) {
+  return [{ json: { error: true, message:
+    'Para tocar musica especifica, envie track_name, track_uri ou artist.' } }];
+}
+
+let trackQuery;
+if (!q && artist) trackQuery = `artist:${artist}`;
+else if (q && artist) trackQuery = `track:${q} artist:${artist}`;
+else trackQuery = q;
+return [{ json: { trackQuery } }];"""
+
+PICK_URI_JS = r"""const item = $input.first().json || {};
+if (item.error) return [{ json: item }];
+const uri = item.uri || null;
+if (!uri) {
+  let q = '';
+  try { q = $('Resolve track input').first().json.trackQuery || ''; } catch(e) {}
+  return [{ json: { error: true, message: `Nao encontrei faixa para: ${q || 'consulta vazia'}` } }];
+}
+return [{ json: {
+  trackUri: uri,
+  matchedTrack: item.name || null,
+  matchedArtist: item.artists?.[0]?.name || null
+} }];"""
+
+GENRE_JS = r"""const body = $('Map action').first().json.body || {};
+const raw = String(body.genre || body.genero || '').trim().toLowerCase();
+const map = {
+  pop: 'spotify:playlist:37i9dQZF1DXcBWIGoYBM5M',
+  rock: 'spotify:playlist:37i9dQZF1DWXRqgorJj26U',
+  jazz: 'spotify:playlist:37i9dQZF1DXbITWG1ZJKYt',
+  lofi: 'spotify:playlist:37i9dQZF1DXdxcBWuJkbcy',
+  'lo-fi': 'spotify:playlist:37i9dQZF1DXdxcBWuJkbcy',
+  electronic: 'spotify:playlist:37i9dQZF1DX4dyzvuaRJ0n',
+  eletronic: 'spotify:playlist:37i9dQZF1DX4dyzvuaRJ0n',
+  eletronica: 'spotify:playlist:37i9dQZF1DX4dyzvuaRJ0n',
+  'eletrônica': 'spotify:playlist:37i9dQZF1DX4dyzvuaRJ0n',
+  funk: 'spotify:playlist:37i9dQZF1DXaXB8fQg7xif',
+  rap: 'spotify:playlist:37i9dQZF1DX0XUsuxWHRQd',
+  hiphop: 'spotify:playlist:37i9dQZF1DX0XUsuxWHRQd',
+  hip_hop: 'spotify:playlist:37i9dQZF1DX0XUsuxWHRQd',
+  classica: 'spotify:playlist:37i9dQZF1DWWEJlAGA9gs0',
+  'clássica': 'spotify:playlist:37i9dQZF1DWWEJlAGA9gs0',
+  classical: 'spotify:playlist:37i9dQZF1DWWEJlAGA9gs0',
+};
+const uri = map[raw] || body.playlist_uri || body.uri || null;
+if (!uri) {
+  return [{ json: { error: true, message: 'Genero nao reconhecido. Envie genre ou playlist_uri.' } }];
+}
+return [{ json: { genreUri: uri } }];"""
+
+# ── Respond body expression (resiliente) ──────────────────────────
+
+RESPOND_BODY = n8n(
+    "(() => {"
+    " let m = {};"
+    " try { m = $('Map action').first().json || {}; } catch(e) {}"
+    " const r = $json || {};"
+    " const sc = r.statusCode;"
+    " const ok = sc != null ? (sc >= 200 && sc < 300) : (r.error !== true);"
+    " return JSON.stringify({ ok, action: m.action, spotifyOp: m.spotifyOp, result: r });"
+    "})()"
+)
+
+# ── Body / URL expressions ────────────────────────────────────────
+
+_PL_URI = f"{_BODY}.playlist_uri || {_BODY}.uri || {_BODY}.context_uri"
+_PL_URI_FULL = f"{_PL_URI} || {_BODY}.playlist_id"
+
+START_PL_BODY = n8n("JSON.stringify({ context_uri: " + _PL_URI + " })")
+SWITCH_PL_BODY = n8n("JSON.stringify({ context_uri: " + _PL_URI_FULL + " })")
+PLAY_TRACK_BODY = n8n("JSON.stringify({ uris: [$json.trackUri] })")
+PLAY_GENRE_BODY = n8n("JSON.stringify({ context_uri: $json.genreUri })")
+
+VOLUME_URL = n8n(
+    f"'{API}/me/player/volume?volume_percent='"
+    f" + Number({_BODY}.volume_percent || {_BODY}.volume || 50)"
+    f" + '&device_id=' + {_DEV}"
+)
+
+# ── Nodes ─────────────────────────────────────────────────────────
+
+nodes: list[dict] = [
+    # ── Entry ──
     {
         "parameters": {
             "httpMethod": "POST",
@@ -216,361 +263,236 @@ nodes = [
             "responseMode": "responseNode",
             "options": {},
         },
-        "id": "wh-athena",
+        "id": "wh",
         "name": "Webhook ATHENA",
         "type": "n8n-nodes-base.webhook",
         "typeVersion": 2,
-        "position": [0, 300],
+        "position": [0, 500],
         "webhookId": "athena-spotify",
     },
-    {
-        "parameters": {"mode": "runOnceForAllItems", "jsCode": map_js},
-        "id": "code-map",
-        "name": "Map action",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [220, 300],
-    },
-    {
-        "parameters": {
-            "mode": "expression",
-            "numberOutputs": 12,
-            "output": switch_output_expr,
-        },
-        "id": "switch-route",
-        "name": "Route",
-        "type": "n8n-nodes-base.switch",
-        "typeVersion": 3.2,
-        "position": [440, 300],
-    },
-    spotify_node("sp-pause", "Pause", "pause", [1080, 0]),
-    spotify_node("sp-resume", "Resume", "resume", [1080, 120]),
-    spotify_node("sp-next", "Next", "nextSong", [1080, 240]),
-    spotify_node("sp-prev", "Previous", "previousSong", [1080, 360]),
-    spotify_node(
-        "sp-vol",
-        "Volume",
-        "volume",
-        [1080, 480],
-        {
-            "volumePercent": "={{ Number($json.body.volume_percent ?? $json.body.volume ?? 50) }}",
-        },
+    _code("code-map", "Map action", [220, 500], map_js),
+    _switch(
+        "sw-needs-dev",
+        "Needs device?",
+        [440, 500],
+        2,
+        n8n(
+            "({'pause':0,'listPlaylists':0,'healthcheck':0,'unsupported':0})"
+            "[$json.spotifyOp] ?? 1"
+        ),
     ),
-    spotify_node(
-        "sp-playlist",
-        "Start playlist",
-        "startMusic",
-        [1080, 600],
-        {
-            "id": "={{ $json.body.playlist_uri || $json.body.uri || $json.body.context_uri }}",
-        },
+    # ── No-device path ──
+    _switch(
+        "sw-no-dev",
+        "Route no-device",
+        [660, 200],
+        4,
+        n8n(
+            "({'pause':0,'listPlaylists':1,'healthcheck':2,'unsupported':3})"
+            "[$json.spotifyOp] ?? 3"
+        ),
     ),
+    _http("http-pause", "Pause", [880, 20], "PUT", f"{API}/me/player/pause"),
     {
         "parameters": {
             "resource": "playlist",
             "operation": "getUserPlaylists",
             "returnAll": True,
         },
-        "id": "sp-list-playlists",
+        "id": "sp-list-pl",
         "name": "List playlists",
         "type": "n8n-nodes-base.spotify",
         "typeVersion": 1,
-        "position": [700, 720],
+        "position": [880, 180],
         "credentials": SPOTIFY_CRED,
     },
-    {
-        "parameters": {
-            "mode": "runOnceForAllItems",
-            "jsCode": """const items = $input.all().map(i => i.json || {});
-const playlists = items.map((p) => ({
-  id: p.id,
-  uri: p.uri,
-  name: p.name,
-  owner: p.owner?.display_name || p.owner?.id || null,
-  tracks: p.tracks?.total ?? null,
-  public: p.public ?? null,
-}));
-return [{ json: { playlists, total: playlists.length } }];""",
-        },
-        "id": "code-format-playlists",
-        "name": "Format playlists",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [900, 720],
-    },
-    spotify_node(
-        "sp-switch-playlist",
-        "Switch playlist",
-        "startMusic",
-        [1080, 840],
-        {
-            "id": "={{ $json.body.playlist_uri || $json.body.uri || $json.body.context_uri || $json.body.playlist_id }}",
-        },
+    _code("code-fmt-pl", "Format playlists", [1100, 180], FORMAT_PL_JS),
+    _code("code-probe", "Probe ok", [880, 340], PROBE_JS),
+    _code("code-unsup", "Unsupported", [880, 480], UNSUPPORTED_JS),
+    # ── Device path ──
+    _http(
+        "http-get-dev",
+        "Get devices",
+        [660, 740],
+        "GET",
+        f"{API}/me/player/devices",
     ),
-    {
-        "parameters": {
-            "mode": "runOnceForAllItems",
-            "jsCode": """const body = $json.body || {};
-const rawAction = String($json.action || '').trim();
-const normalizedAction = String($json.normalizedAction || '').trim();
-
-const directUri = body.track_uri || body.uri || body.track_id || null;
-if (directUri) {
-  return [{ json: { ...$json, trackUri: directUri, trackQuery: null } }];
-}
-
-let q =
-  body.track_query ||
-  body.track_name ||
-  body.track ||
-  body.song ||
-  body.music ||
-  body.query ||
-  '';
-
-if (!q && (rawAction || normalizedAction)) {
-  const source = normalizedAction || rawAction.toLowerCase();
-  q = source
-    .replace(/^tocar?_?musica_?/i, '')
-    .replace(/^play_?track_?/i, '')
-    .replace(/^toca_?/i, '')
-    .replace(/^play_?/i, '')
-    .replace(/_?pfv$/i, '')
-    .replace(/_?por_favor$/i, '')
-    .replace(/_/g, ' ')
-    .trim();
-}
-
-const artist = String(body.artist || body.artista || '').trim();
-
-if (!q && !artist) {
-  return [{ json: { error: true, message: 'Para tocar música específica, envie track_uri/track_id ou track_name ou artist.' } }];
-}
-
-let trackQuery;
-if (!q && artist) {
-  trackQuery = `artist:${artist}`;
-} else if (q && artist) {
-  trackQuery = `track:${q} artist:${artist}`;
-} else {
-  trackQuery = q;
-}
-return [{ json: { ...$json, trackQuery } }];""",
-        },
-        "id": "code-resolve-track",
-        "name": "Resolve track input",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [700, 960],
-    },
+    _code("code-pick-dev", "Pick device", [880, 740], PICK_DEVICE_JS),
+    _switch(
+        "sw-dev-ok",
+        "Device ok?",
+        [1100, 740],
+        2,
+        n8n("$json.error === true ? 1 : 0"),
+    ),
+    _switch(
+        "sw-actions",
+        "Route actions",
+        [1320, 740],
+        8,
+        n8n(
+            "({'resume':0,'nextSong':1,'previousSong':2,'volume':3,"
+            "'startMusic':4,'switchPlaylist':5,'playTrack':6,'playGenre':7})"
+            f"[{_MAP}.spotifyOp] ?? 0"
+        ),
+    ),
+    # ── Device actions ──
+    _http("http-resume", "Resume", [1540, 460], "PUT", _player_url("play")),
+    _http("http-next", "Next", [1540, 600], "POST", _player_url("next")),
+    _http("http-prev", "Previous", [1540, 740], "POST", _player_url("previous")),
+    _http("http-vol", "Volume", [1540, 880], "PUT", VOLUME_URL),
+    _http(
+        "http-start-pl",
+        "Start playlist",
+        [1540, 1020],
+        "PUT",
+        _player_url("play"),
+        body_expr=START_PL_BODY,
+    ),
+    _http(
+        "http-switch-pl",
+        "Switch playlist",
+        [1540, 1160],
+        "PUT",
+        _player_url("play"),
+        body_expr=SWITCH_PL_BODY,
+    ),
+    # ── playTrack sub-chain ──
+    _code(
+        "code-resolve-tr",
+        "Resolve track input",
+        [1540, 1340],
+        RESOLVE_TRACK_JS,
+    ),
     {
         "parameters": {
             "resource": "track",
             "operation": "search",
-            "query": "={{ $json.trackQuery }}",
+            "query": n8n("$json.trackQuery"),
             "returnAll": False,
             "limit": 1,
         },
-        "id": "sp-search-track",
+        "id": "sp-search-tr",
         "name": "Search track",
         "type": "n8n-nodes-base.spotify",
         "typeVersion": 1,
-        "position": [860, 960],
+        "position": [1760, 1340],
         "credentials": SPOTIFY_CRED,
     },
-    {
-        "parameters": {
-            "mode": "runOnceForAllItems",
-            "jsCode": """const inItem = $input.first().json || {};
-if (inItem.error) return [{ json: inItem }];
-
-const uri = inItem.uri || null;
-if (!uri) {
-  return [{ json: { error: true, message: `Nao encontrei faixa para: ${$json.trackQuery || 'consulta vazia'}` } }];
-}
-
-return [{ json: { ...$json, trackUri: uri, matchedTrack: inItem.name || null, matchedArtist: inItem.artists?.[0]?.name || null } }];""",
-        },
-        "id": "code-pick-track-uri",
-        "name": "Pick track URI",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [1020, 960],
-    },
-    {
-        "parameters": {
-            "mode": "expression",
-            "numberOutputs": 2,
-            "output": "={{ $json.error === true ? 1 : 0 }}",
-        },
-        "id": "sw-track-resolved",
-        "name": "Track resolved?",
-        "type": "n8n-nodes-base.switch",
-        "typeVersion": 3.2,
-        "position": [1140, 960],
-    },
-    {
-        "parameters": {"mode": "runOnceForAllItems", "jsCode": MERGE_CTX_PLAYTRACK_JS},
-        "id": "code-merge-playtr",
-        "name": "Restore track after transfer",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [1840, 960],
-    },
-    spotify_node(
-        "sp-queue-track",
-        "Queue track",
-        "addSongToQueue",
-        [2000, 960],
-        {
-            "id": "={{ $json.trackUri }}",
-        },
+    _code("code-pick-uri", "Pick track URI", [1980, 1340], PICK_URI_JS),
+    _switch(
+        "sw-tr-ok",
+        "Track ok?",
+        [2200, 1340],
+        2,
+        n8n("$json.error === true ? 1 : 0"),
     ),
-    spotify_node("sp-play-queued", "Play queued track", "nextSong", [2160, 960]),
-    {
-        "parameters": {
-            "mode": "runOnceForAllItems",
-            "jsCode": """const body = $json.body || {};
-const raw = String(body.genre || body.genero || '').trim().toLowerCase();
-const byGenre = {
-  pop: 'spotify:playlist:37i9dQZF1DXcBWIGoYBM5M',
-  rock: 'spotify:playlist:37i9dQZF1DWXRqgorJj26U',
-  jazz: 'spotify:playlist:37i9dQZF1DXbITWG1ZJKYt',
-  lofi: 'spotify:playlist:37i9dQZF1DXdxcBWuJkbcy',
-  'lo-fi': 'spotify:playlist:37i9dQZF1DXdxcBWuJkbcy',
-  eletronic: 'spotify:playlist:37i9dQZF1DX4dyzvuaRJ0n',
-  eletrônica: 'spotify:playlist:37i9dQZF1DX4dyzvuaRJ0n',
-  electronic: 'spotify:playlist:37i9dQZF1DX4dyzvuaRJ0n',
-  funk: 'spotify:playlist:37i9dQZF1DXaXB8fQg7xif',
-  rap: 'spotify:playlist:37i9dQZF1DX0XUsuxWHRQd',
-  hiphop: 'spotify:playlist:37i9dQZF1DX0XUsuxWHRQd',
-  hip_hop: 'spotify:playlist:37i9dQZF1DX0XUsuxWHRQd',
-  classica: 'spotify:playlist:37i9dQZF1DWWEJlAGA9gs0',
-  clássica: 'spotify:playlist:37i9dQZF1DWWEJlAGA9gs0',
-  classical: 'spotify:playlist:37i9dQZF1DWWEJlAGA9gs0',
-};
-const genreUri = byGenre[raw] || body.playlist_uri || body.uri || null;
-if (!genreUri) {
-  return [{ json: { error: true, message: 'Genero nao reconhecido. Envie genre ou playlist_uri.' } }];
-}
-return [{ json: { ...$json, genreUri } }];""",
-        },
-        "id": "code-genre-map",
-        "name": "Genre to playlist",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [700, 1080],
-    },
-    spotify_node(
-        "sp-play-genre",
+    _http(
+        "http-play-tr",
+        "Play track",
+        [2420, 1340],
+        "PUT",
+        _player_url("play"),
+        body_expr=PLAY_TRACK_BODY,
+    ),
+    # ── playGenre sub-chain ──
+    _code("code-genre", "Genre to playlist", [1540, 1520], GENRE_JS),
+    _switch(
+        "sw-genre-ok",
+        "Genre ok?",
+        [1760, 1520],
+        2,
+        n8n("$json.error === true ? 1 : 0"),
+    ),
+    _http(
+        "http-play-genre",
         "Play genre",
-        "startMusic",
-        [1080, 1080],
-        {"id": "={{ $json.genreUri }}"},
+        [1980, 1520],
+        "PUT",
+        _player_url("play"),
+        body_expr=PLAY_GENRE_BODY,
     ),
-    {
-        "parameters": {
-            "mode": "runOnceForAllItems",
-            "jsCode": """return [{ json: { ok: true, probe: true, message: 'Spotify webhook online' } }];""",
-        },
-        "id": "code-probe-ok",
-        "name": "Connectivity probe ok",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [700, 1140],
-    },
-    {
-        "parameters": {"mode": "runOnceForAllItems", "jsCode": unsupported_js},
-        "id": "code-bad",
-        "name": "Unsupported action",
-        "type": "n8n-nodes-base.code",
-        "typeVersion": 2,
-        "position": [700, 1260],
-    },
-    *ensure_nodes,
+    # ── Response ──
     {
         "parameters": {
             "respondWith": "json",
-            "responseBody": respond_body,
+            "responseBody": RESPOND_BODY,
             "options": {},
         },
         "id": "respond",
         "name": "Respond to Webhook",
         "type": "n8n-nodes-base.respondToWebhook",
         "typeVersion": 1.1,
-        "position": [1280, 300],
+        "position": [2640, 740],
     },
 ]
 
+
+# ── Connections ───────────────────────────────────────────────────
+
+
+def _c(target: str, index: int = 0) -> list[dict]:
+    return [{"node": target, "type": "main", "index": index}]
+
+
+R = "Respond to Webhook"
+
 connections: dict = {
-    "Webhook ATHENA": {"main": [[{"node": "Map action", "type": "main", "index": 0}]]},
-    "Map action": {"main": [[{"node": "Route", "type": "main", "index": 0}]]},
-    "Route": {
+    # Entry
+    "Webhook ATHENA": {"main": [_c("Map action")]},
+    "Map action": {"main": [_c("Needs device?")]},
+    "Needs device?": {"main": [_c("Route no-device"), _c("Get devices")]},
+    # No-device routing
+    "Route no-device": {
         "main": [
-            [{"node": "Pause", "type": "main", "index": 0}],
-            [{"node": "Get devices · resume", "type": "main", "index": 0}],
-            [{"node": "Get devices · next", "type": "main", "index": 0}],
-            [{"node": "Get devices · prev", "type": "main", "index": 0}],
-            [{"node": "Get devices · vol", "type": "main", "index": 0}],
-            [{"node": "Get devices · startpl", "type": "main", "index": 0}],
-            [{"node": "List playlists", "type": "main", "index": 0}],
-            [{"node": "Get devices · switchpl", "type": "main", "index": 0}],
-            [{"node": "Resolve track input", "type": "main", "index": 0}],
-            [{"node": "Genre to playlist", "type": "main", "index": 0}],
-            [{"node": "Connectivity probe ok", "type": "main", "index": 0}],
-            [{"node": "Unsupported action", "type": "main", "index": 0}],
+            _c("Pause"),
+            _c("List playlists"),
+            _c("Probe ok"),
+            _c("Unsupported"),
         ]
     },
-    "Pause": {"main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]},
-    "List playlists": {"main": [[{"node": "Format playlists", "type": "main", "index": 0}]]},
-    "Format playlists": {"main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]},
-    "Resolve track input": {"main": [[{"node": "Search track", "type": "main", "index": 0}]]},
-    "Search track": {"main": [[{"node": "Pick track URI", "type": "main", "index": 0}]]},
-    "Pick track URI": {"main": [[{"node": "Track resolved?", "type": "main", "index": 0}]]},
-    "Track resolved?": {
+    "Pause": {"main": [_c(R)]},
+    "List playlists": {"main": [_c("Format playlists")]},
+    "Format playlists": {"main": [_c(R)]},
+    "Probe ok": {"main": [_c(R)]},
+    "Unsupported": {"main": [_c(R)]},
+    # Device path
+    "Get devices": {"main": [_c("Pick device")]},
+    "Pick device": {"main": [_c("Device ok?")]},
+    "Device ok?": {"main": [_c("Route actions"), _c(R)]},
+    # Action routing
+    "Route actions": {
         "main": [
-            [{"node": "Get devices · playtr", "type": "main", "index": 0}],
-            [{"node": "Respond to Webhook", "type": "main", "index": 0}],
+            _c("Resume"),
+            _c("Next"),
+            _c("Previous"),
+            _c("Volume"),
+            _c("Start playlist"),
+            _c("Switch playlist"),
+            _c("Resolve track input"),
+            _c("Genre to playlist"),
         ]
     },
-    "Restore track after transfer": {"main": [[{"node": "Queue track", "type": "main", "index": 0}]]},
-    "Queue track": {"main": [[{"node": "Play queued track", "type": "main", "index": 0}]]},
-    "Play queued track": {"main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]},
-    "Genre to playlist": {"main": [[{"node": "Get devices · genre", "type": "main", "index": 0}]]},
-    "Connectivity probe ok": {"main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]},
-    "Unsupported action": {"main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]},
+    # Simple actions → Respond
+    "Resume": {"main": [_c(R)]},
+    "Next": {"main": [_c(R)]},
+    "Previous": {"main": [_c(R)]},
+    "Volume": {"main": [_c(R)]},
+    "Start playlist": {"main": [_c(R)]},
+    "Switch playlist": {"main": [_c(R)]},
+    # playTrack chain
+    "Resolve track input": {"main": [_c("Search track")]},
+    "Search track": {"main": [_c("Pick track URI")]},
+    "Pick track URI": {"main": [_c("Track ok?")]},
+    "Track ok?": {"main": [_c("Play track"), _c(R)]},
+    "Play track": {"main": [_c(R)]},
+    # playGenre chain
+    "Genre to playlist": {"main": [_c("Genre ok?")]},
+    "Genre ok?": {"main": [_c("Play genre"), _c(R)]},
+    "Play genre": {"main": [_c(R)]},
 }
 
-for names, target in ensure_meta:
-    g, p, s, x = names["get"], names["pick"], names["sw"], names["xfer"]
-    connections[g] = {"main": [[{"node": p, "type": "main", "index": 0}]]}
-    connections[p] = {"main": [[{"node": s, "type": "main", "index": 0}]]}
-    connections[s] = {
-        "main": [
-            [{"node": x, "type": "main", "index": 0}],
-            [{"node": "Respond to Webhook", "type": "main", "index": 0}],
-        ]
-    }
-    connections[x] = {"main": [[{"node": target, "type": "main", "index": 0}]]}
-
-pg, pp, ps, px = playtr_names["get"], playtr_names["pick"], playtr_names["sw"], playtr_names["xfer"]
-connections[pg] = {"main": [[{"node": pp, "type": "main", "index": 0}]]}
-connections[pp] = {"main": [[{"node": ps, "type": "main", "index": 0}]]}
-connections[ps] = {
-    "main": [
-        [{"node": px, "type": "main", "index": 0}],
-        [{"node": "Respond to Webhook", "type": "main", "index": 0}],
-    ]
-}
-connections[px] = {"main": [[{"node": "Restore track after transfer", "type": "main", "index": 0}]]}
-
-connections["Resume"] = {"main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]}
-connections["Next"] = {"main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]}
-connections["Previous"] = {"main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]}
-connections["Volume"] = {"main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]}
-connections["Start playlist"] = {"main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]}
-connections["Switch playlist"] = {"main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]}
-connections["Play genre"] = {"main": [[{"node": "Respond to Webhook", "type": "main", "index": 0}]]}
+# ── Output ────────────────────────────────────────────────────────
 
 wf = {
     "name": "ATHENA Spotify Control",
@@ -582,7 +504,6 @@ wf = {
     "tags": [],
 }
 
-(ROOT / "spotify_athena_workflow.json").write_text(
-    json.dumps(wf, indent=2, ensure_ascii=False), encoding="utf-8"
-)
-print("Wrote integrations/n8n/spotify/spotify_athena_workflow.json")
+out = ROOT / "spotify_athena_workflow.json"
+out.write_text(json.dumps(wf, indent=2, ensure_ascii=False), encoding="utf-8")
+print(f"Wrote {out.relative_to(ROOT.parent.parent.parent)}")

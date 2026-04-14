@@ -2091,53 +2091,76 @@ function App() {
             {/* Top Bar (Draggable) — oculto nas configurações para não competir com o painel (z-index + um único fluxo de fechar) */}
             {!showSettings && (
                 <div
-                    className="z-50 relative flex min-h-[38px] items-center justify-between gap-3 px-3 py-1 border-b border-white/[0.08] bg-black/40 backdrop-blur-xl select-none sticky top-0"
+                    className="z-50 relative flex min-h-[42px] items-center justify-between gap-4 px-3 py-1.5 border-b border-white/[0.05] bg-gradient-to-r from-black/50 via-zinc-950/50 to-black/50 backdrop-blur-2xl select-none sticky top-0"
                     style={{ WebkitAppRegion: 'drag' }}
                 >
-                    <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
+                    {/* Top accent line */}
+                    <div className="pointer-events-none absolute inset-x-0 top-0 h-px bg-gradient-to-r from-transparent via-cyan-400/15 to-transparent" />
+                    {/* Bottom subtle glow */}
+                    <div className="pointer-events-none absolute inset-x-0 bottom-0 h-px bg-gradient-to-r from-transparent via-white/[0.06] to-transparent" />
 
-                    {/* Esquerda: marca + relógio */}
+                    {/* Esquerda: status + marca + relógio */}
                     <div
-                        className="relative z-10 flex items-center gap-3 rounded-full border border-white/10 bg-black/35 px-3.5 py-1 shadow-[0_10px_30px_rgba(0,0,0,0.45)]"
+                        className="relative z-10 flex items-center gap-2.5 rounded-full border border-white/[0.07] bg-white/[0.03] pl-2.5 pr-3.5 py-1.5 shadow-[0_4px_20px_rgba(0,0,0,0.35)] backdrop-blur-md transition-all duration-300 hover:border-white/[0.12] hover:bg-white/[0.05]"
                         style={{ WebkitAppRegion: 'no-drag' }}
                     >
-                        <div className={`h-1.5 w-1.5 shrink-0 rounded-full ${isConnected ? 'bg-emerald-400 shadow-[0_0_12px_rgba(74,222,128,0.65)]' : 'bg-rose-400 shadow-[0_0_10px_rgba(244,63,94,0.5)]'}`} />
-                        <div className="text-zinc-100 text-[11px] font-semibold leading-none tracking-[0.22em] uppercase">
-                            ATHENAS · OrbitalSync
+                        {/* Animated status indicator */}
+                        <div className="relative flex items-center justify-center">
+                            <div className={`h-2 w-2 shrink-0 rounded-full transition-colors duration-500 ${isConnected ? 'bg-emerald-400' : 'bg-rose-400'}`} />
+                            {isConnected && (
+                                <div className="absolute inset-0 h-2 w-2 animate-ping rounded-full bg-emerald-400/40" style={{ animationDuration: '2s' }} />
+                            )}
                         </div>
-                        <div className="h-3 w-px shrink-0 bg-white/12" />
-                        <div className="flex items-center gap-1 text-[10px] font-medium leading-none tracking-[0.14em] text-zinc-400 tabular-nums">
-                            <Clock size={11} className="text-zinc-500 opacity-80" strokeWidth={2} />
+
+                        {/* Divider */}
+                        <div className="h-4 w-px shrink-0 bg-gradient-to-b from-transparent via-white/[0.1] to-transparent" />
+
+                        {/* Brand name */}
+                        <div className="flex items-baseline gap-1.5">
+                            <span className="text-[11px] font-bold leading-none tracking-[0.2em] uppercase bg-gradient-to-r from-zinc-100 to-zinc-300 bg-clip-text text-transparent">
+                                ATHENAS
+                            </span>
+                            <span className="text-[9px] font-semibold leading-none tracking-[0.18em] uppercase text-zinc-600">
+                                OrbitalSync
+                            </span>
+                        </div>
+
+                        {/* Divider */}
+                        <div className="h-4 w-px shrink-0 bg-gradient-to-b from-transparent via-white/[0.08] to-transparent" />
+
+                        {/* Clock */}
+                        <div className="flex items-center gap-1.5 text-[10px] font-semibold leading-none tracking-[0.12em] text-zinc-500 tabular-nums">
+                            <Clock size={10} className="text-zinc-600" strokeWidth={2.5} />
                             {formattedClock}
                         </div>
                     </div>
 
-                    {/* Direita: minimizar / maximizar / fechar (padrão Windows) */}
+                    {/* Direita: minimizar / maximizar / fechar */}
                     <div className="relative z-10 pr-0.5" style={{ WebkitAppRegion: 'no-drag' }}>
-                        <div className="flex items-center gap-px rounded-full border border-white/10 bg-black/35 px-1 py-0.5 shadow-[0_10px_30px_rgba(0,0,0,0.45)]">
+                        <div className="flex items-center gap-0.5 rounded-full border border-white/[0.06] bg-white/[0.02] px-1 py-1 shadow-[0_4px_20px_rgba(0,0,0,0.3)] backdrop-blur-md">
                             <button
                                 type="button"
                                 onClick={handleMinimize}
                                 title="Minimizar"
-                                className="group flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-zinc-500 transition-colors hover:bg-white/[0.08] hover:text-zinc-100"
+                                className="group flex h-6 w-7 shrink-0 items-center justify-center rounded-full text-zinc-600 transition-all duration-200 hover:bg-amber-400/15 hover:text-amber-200"
                             >
-                                <Minus size={12} strokeWidth={2.25} className="opacity-90" />
+                                <Minus size={12} strokeWidth={2.5} className="transition-transform group-hover:scale-110" />
                             </button>
                             <button
                                 type="button"
                                 onClick={handleMaximize}
                                 title="Maximizar / restaurar"
-                                className="group flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-zinc-500 transition-colors hover:bg-white/[0.08] hover:text-zinc-100"
+                                className="group flex h-6 w-7 shrink-0 items-center justify-center rounded-full text-zinc-600 transition-all duration-200 hover:bg-emerald-400/15 hover:text-emerald-200"
                             >
-                                <Maximize2 size={11} strokeWidth={2.25} className="opacity-90" />
+                                <Maximize2 size={10} strokeWidth={2.5} className="transition-transform group-hover:scale-110" />
                             </button>
                             <button
                                 type="button"
                                 onClick={handleCloseRequest}
                                 title="Fechar"
-                                className="group flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-zinc-500 transition-colors hover:bg-rose-500/25 hover:text-rose-100"
+                                className="group flex h-6 w-7 shrink-0 items-center justify-center rounded-full text-zinc-600 transition-all duration-200 hover:bg-rose-500/20 hover:text-rose-300"
                             >
-                                <X size={12} strokeWidth={2.25} className="opacity-90" />
+                                <X size={12} strokeWidth={2.5} className="transition-transform group-hover:scale-110 group-hover:rotate-90" />
                             </button>
                         </div>
                     </div>

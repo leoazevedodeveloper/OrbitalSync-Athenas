@@ -21,6 +21,7 @@ const normalized = raw
 
 const map = {
   pause: 'pause',
+  pausar: 'pause',
   play: 'resume',
   resume: 'resume',
   start: 'resume',
@@ -34,7 +35,6 @@ const map = {
   previous: 'previousSong',
   back: 'previousSong',
   volume: 'volume',
-  playlist: 'listPlaylists',
   play_playlist: 'startMusic',
   list_playlists: 'listPlaylists',
   playlists: 'listPlaylists',

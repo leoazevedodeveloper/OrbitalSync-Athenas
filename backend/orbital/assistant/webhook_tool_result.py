@@ -42,8 +42,8 @@ def format_webhook_tool_result(
 
     if integration_hint == "spotify":
         hint = (
-            "Spotify often needs Premium + app open + an active device with recent playback; "
-            "resume/play can silently fail if there is no active player."
+            "Spotify needs Premium + app open + active device. "
+            "Transient 502/429 errors are retried automatically."
         )
     elif integration_hint == "google_calendar":
         hint = (

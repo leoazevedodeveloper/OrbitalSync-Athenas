@@ -8,20 +8,20 @@
         "responseMode": "responseNode",
         "options": {}
       },
-      "id": "wh-athena",
+      "id": "wh",
       "name": "Webhook ATHENA",
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2,
       "position": [
         0,
-        420
+        500
       ],
       "webhookId": "athena-spotify"
     },
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "// Mapeia body.action -> spotifyOp (chaves do Switch n8n: pause, resume, nextSong, …).\n// IMPORTANTE: o Switch NÃO tem chave \"play\" — só \"resume\". Por isso play → resume.\n\nconst root = $input.first().json;\nconst body = root.body && typeof root.body === 'object' ? root.body : root;\nconst pickAction = () => {\n  if (body && typeof body.action === 'string' && body.action.trim()) return body.action;\n  if (body && typeof body.command === 'string' && body.command.trim()) return body.command;\n  if (body && typeof body.intent === 'string' && body.intent.trim()) return body.intent;\n  return '';\n};\n\nconst raw = String(pickAction())\n  .toLowerCase()\n  .trim();\n\nconst normalized = raw\n  .normalize('NFD')\n  .replace(/[\\u0300-\\u036f]/g, '')\n  .replace(/\\s+/g, '_');\n\nconst map = {\n  pause: 'pause',\n  play: 'resume',\n  resume: 'resume',\n  start: 'resume',\n  unpause: 'resume',\n  continue: 'resume',\n  continuar: 'resume',\n  retomar: 'resume',\n  despausar: 'resume',\n  next: 'nextSong',\n  skip: 'nextSong',\n  previous: 'previousSong',\n  back: 'previousSong',\n  volume: 'volume',\n  playlist: 'listPlaylists',\n  play_playlist: 'startMusic',\n  list_playlists: 'listPlaylists',\n  playlists: 'listPlaylists',\n  listar_playlists: 'listPlaylists',\n  trocar_playlist: 'switchPlaylist',\n  switch_playlist: 'switchPlaylist',\n  change_playlist: 'switchPlaylist',\n  tocar_musica: 'playTrack',\n  play_track: 'playTrack',\n  track: 'playTrack',\n  tocar_genero: 'playGenre',\n  play_genre: 'playGenre',\n  genre: 'playGenre',\n};\n\nlet spotifyOp = map[raw] || map[normalized];\n\nconst parsePercent = (value) => {\n  if (value === null || value === undefined || value === '') return null;\n  const n = Number(String(value).replace(',', '.'));\n  if (!Number.isFinite(n)) return null;\n  return Math.max(0, Math.min(100, Math.round(n)));\n};\n\nconst upWords = /\\b(up|increase|raise|higher|louder|aumentar|mais|alto)\\b/i;\nconst downWords = /\\b(down|decrease|lower|quieter|softer|abaixar|baixar|diminuir|menos|baixo)\\b/i;\n\nconst actionMentionsVolume = /\\b(volume|som|audio|áudio)\\b/i.test(raw);\nconst hasExplicitVolumeField =\n  body.volume_percent !== undefined ||\n  body.volume !== undefined ||\n  body.volume_delta !== undefined ||\n  body.delta !== undefined;\n\nif ((actionMentionsVolume && (upWords.test(raw) || downWords.test(raw))) || hasExplicitVolumeField) {\n  spotifyOp = 'volume';\n}\n\n// Health check/ping interno do Orbital.\nif (raw === '__orbital_connectivity_probe__') {\n  spotifyOp = 'healthcheck';\n}\n\n// play / resume / start + dados de faixa -> tocar música específica (não só retomar).\n// Sem isso, action:play + track_name ia para Resume e ignorava o nome.\nconst hasTrackTarget = Boolean(\n  (body.track_uri && String(body.track_uri).trim()) ||\n  (body.track_id && String(body.track_id).trim()) ||\n  (body.track_name && String(body.track_name).trim()) ||\n  (body.track_query && String(body.track_query).trim()) ||\n  (body.track && String(body.track).trim()) ||\n  (body.song && String(body.song).trim()) ||\n  (body.music && String(body.music).trim()) ||\n  (body.query &&\n    String(body.query).trim() &&\n    !body.playlist_uri &&\n    !body.context_uri) ||\n  (body.artist && String(body.artist).trim()) ||\n  (body.artista && String(body.artista).trim())\n);\nif (hasTrackTarget && spotifyOp === 'resume' && raw !== '__orbital_connectivity_probe__') {\n  spotifyOp = 'playTrack';\n}\n\n// Desambiguação: \"playlist\" sem URI/ID -> listar; com URI/ID -> tocar/trocar.\nif (raw === 'playlist' || normalized === 'playlist') {\n  const hasContext = Boolean(\n    body.playlist_uri || body.uri || body.context_uri || body.playlist_id\n  );\n  spotifyOp = hasContext ? 'switchPlaylist' : 'listPlaylists';\n}\n\nif (!spotifyOp) {\n  // Linguagem natural no campo action, ex: \"toca a paixão me levou pfv\"\n  if (/^(toca|toque|tocar|play)\\b/.test(raw)) {\n    spotifyOp = 'playTrack';\n    if (!body.track_query && !body.track_name && !body.track && !body.song && !body.music && !body.query) {\n      const extracted = raw\n        .replace(/^(toca|toque|tocar|play)\\s+/i, '')\n        .replace(/\\b(pfv|por favor)\\b/gi, '')\n        .trim();\n      if (extracted) body.track_query = extracted;\n    }\n  } else if (\n    /\\bplaylist(s)?\\b/.test(raw) &&\n    /\\b(quais|quantas|minhas|lista|listar|mostrar|ver|tenho|salva|salvas|cadastrada|cadastradas|guardada|guardadas)\\b/.test(raw)\n  ) {\n    spotifyOp = 'listPlaylists';\n  }\n}\n\nif (!spotifyOp) {\n  spotifyOp = 'unsupported';\n}\n\nif (spotifyOp === 'volume') {\n  const explicitPercent = parsePercent(body.volume_percent);\n  const explicitVolume = parsePercent(body.volume);\n  const deltaRaw = parsePercent(body.volume_delta ?? body.delta);\n\n  if (explicitPercent !== null) {\n    body.volume_percent = explicitPercent;\n  } else if (explicitVolume !== null) {\n    body.volume_percent = explicitVolume;\n  } else if (deltaRaw !== null) {\n    const base = 50;\n    const sign = downWords.test(raw) ? -1 : 1;\n    body.volume_percent = Math.max(0, Math.min(100, base + sign * deltaRaw));\n  } else if (downWords.test(raw)) {\n    body.volume_percent = 35;\n  } else if (upWords.test(raw)) {\n    body.volume_percent = 65;\n  } else {\n    body.volume_percent = 50;\n  }\n}\n\nreturn [{ json: { spotifyOp, body, action: raw, normalizedAction: normalized } }];\n"
+        "jsCode": "// Mapeia body.action -> spotifyOp (chaves do Switch n8n: pause, resume, nextSong, …).\n// IMPORTANTE: o Switch NÃO tem chave \"play\" — só \"resume\". Por isso play → resume.\n\nconst root = $input.first().json;\nconst body = root.body && typeof root.body === 'object' ? root.body : root;\nconst pickAction = () => {\n  if (body && typeof body.action === 'string' && body.action.trim()) return body.action;\n  if (body && typeof body.command === 'string' && body.command.trim()) return body.command;\n  if (body && typeof body.intent === 'string' && body.intent.trim()) return body.intent;\n  return '';\n};\n\nconst raw = String(pickAction())\n  .toLowerCase()\n  .trim();\n\nconst normalized = raw\n  .normalize('NFD')\n  .replace(/[\\u0300-\\u036f]/g, '')\n  .replace(/\\s+/g, '_');\n\nconst map = {\n  pause: 'pause',\n  pausar: 'pause',\n  play: 'resume',\n  resume: 'resume',\n  start: 'resume',\n  unpause: 'resume',\n  continue: 'resume',\n  continuar: 'resume',\n  retomar: 'resume',\n  despausar: 'resume',\n  next: 'nextSong',\n  skip: 'nextSong',\n  previous: 'previousSong',\n  back: 'previousSong',\n  volume: 'volume',\n  play_playlist: 'startMusic',\n  list_playlists: 'listPlaylists',\n  playlists: 'listPlaylists',\n  listar_playlists: 'listPlaylists',\n  trocar_playlist: 'switchPlaylist',\n  switch_playlist: 'switchPlaylist',\n  change_playlist: 'switchPlaylist',\n  tocar_musica: 'playTrack',\n  play_track: 'playTrack',\n  track: 'playTrack',\n  tocar_genero: 'playGenre',\n  play_genre: 'playGenre',\n  genre: 'playGenre',\n};\n\nlet spotifyOp = map[raw] || map[normalized];\n\n// Health check/ping interno do Orbital.\nif (raw === '__orbital_connectivity_probe__') {\n  spotifyOp = 'healthcheck';\n}\n\n// play / resume / start + dados de faixa -> tocar música específica (não só retomar).\n// Sem isso, action:play + track_name ia para Resume e ignorava o nome.\nconst hasTrackTarget = Boolean(\n  (body.track_uri && String(body.track_uri).trim()) ||\n  (body.track_id && String(body.track_id).trim()) ||\n  (body.track_name && String(body.track_name).trim()) ||\n  (body.track_query && String(body.track_query).trim()) ||\n  (body.track && String(body.track).trim()) ||\n  (body.song && String(body.song).trim()) ||\n  (body.music && String(body.music).trim()) ||\n  (body.query &&\n    String(body.query).trim() &&\n    !body.playlist_uri &&\n    !body.context_uri) ||\n  (body.artist && String(body.artist).trim()) ||\n  (body.artista && String(body.artista).trim())\n);\nif (hasTrackTarget && spotifyOp === 'resume' && raw !== '__orbital_connectivity_probe__') {\n  spotifyOp = 'playTrack';\n}\n\n// Desambiguação: \"playlist\" sem URI/ID -> listar; com URI/ID -> tocar/trocar.\nif (raw === 'playlist' || normalized === 'playlist') {\n  const hasContext = Boolean(\n    body.playlist_uri || body.uri || body.context_uri || body.playlist_id\n  );\n  spotifyOp = hasContext ? 'switchPlaylist' : 'listPlaylists';\n}\n\nif (!spotifyOp) {\n  // Linguagem natural no campo action, ex: \"toca a paixão me levou pfv\"\n  if (/^(toca|toque|tocar|play)\\b/.test(raw)) {\n    spotifyOp = 'playTrack';\n    if (!body.track_query && !body.track_name && !body.track && !body.song && !body.music && !body.query) {\n      const extracted = raw\n        .replace(/^(toca|toque|tocar|play)\\s+/i, '')\n        .replace(/\\b(pfv|por favor)\\b/gi, '')\n        .trim();\n      if (extracted) body.track_query = extracted;\n    }\n  } else if (\n    /\\bplaylist(s)?\\b/.test(raw) &&\n    /\\b(quais|quantas|minhas|lista|listar|mostrar|ver|tenho|salva|salvas|cadastrada|cadastradas|guardada|guardadas)\\b/.test(raw)\n  ) {\n    spotifyOp = 'listPlaylists';\n  }\n}\n\nif (!spotifyOp) {\n  spotifyOp = 'unsupported';\n}\n\nreturn [{ json: { spotifyOp, body, action: raw, normalizedAction: normalized } }];\n"
       },
       "id": "code-map",
       "name": "Map action",
@@ -29,133 +29,61 @@
       "typeVersion": 2,
       "position": [
         220,
-        420
+        500
       ]
     },
     {
       "parameters": {
         "mode": "expression",
-        "numberOutputs": 12,
-        "output": "={{ ({\n  pause: 0,\n  resume: 1,\n  nextSong: 2,\n  previousSong: 3,\n  volume: 4,\n  startMusic: 5,\n  listPlaylists: 6,\n  switchPlaylist: 7,\n  playTrack: 8,\n  playGenre: 9,\n  healthcheck: 10,\n})[$json.spotifyOp] ?? 11 }}"
+        "numberOutputs": 2,
+        "output": "={{ ({'pause':0,'listPlaylists':0,'healthcheck':0,'unsupported':0})[$json.spotifyOp] ?? 1 }}"
       },
-      "id": "switch-route",
-      "name": "Route",
+      "id": "sw-needs-dev",
+      "name": "Needs device?",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
         440,
-        420
+        500
       ]
     },
     {
       "parameters": {
-        "resource": "player",
-        "operation": "pause"
+        "mode": "expression",
+        "numberOutputs": 4,
+        "output": "={{ ({'pause':0,'listPlaylists':1,'healthcheck':2,'unsupported':3})[$json.spotifyOp] ?? 3 }}"
       },
-      "id": "sp-pause",
+      "id": "sw-no-dev",
+      "name": "Route no-device",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        660,
+        200
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "https://api.spotify.com/v1/me/player/pause",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "spotifyOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-pause",
       "name": "Pause",
-      "type": "n8n-nodes-base.spotify",
-      "typeVersion": 1,
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        1080,
-        0
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "resource": "player",
-        "operation": "resume"
-      },
-      "id": "sp-resume",
-      "name": "Resume",
-      "type": "n8n-nodes-base.spotify",
-      "typeVersion": 1,
-      "position": [
-        1080,
-        180
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "resource": "player",
-        "operation": "nextSong"
-      },
-      "id": "sp-next",
-      "name": "Next",
-      "type": "n8n-nodes-base.spotify",
-      "typeVersion": 1,
-      "position": [
-        1080,
-        360
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "resource": "player",
-        "operation": "previousSong"
-      },
-      "id": "sp-prev",
-      "name": "Previous",
-      "type": "n8n-nodes-base.spotify",
-      "typeVersion": 1,
-      "position": [
-        1080,
-        540
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "resource": "player",
-        "operation": "volume",
-        "volumePercent": "={{ (() => { const raw = $json.body?.volume_percent ?? $json.body?.volume ?? 50; const n = Number(String(raw).replace(',', '.')); return Number.isFinite(n) ? Math.max(0, Math.min(100, Math.round(n))) : 50; })() }}"
-      },
-      "id": "sp-vol",
-      "name": "Volume",
-      "type": "n8n-nodes-base.spotify",
-      "typeVersion": 1,
-      "position": [
-        1080,
-        720
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "resource": "player",
-        "operation": "startMusic",
-        "id": "={{ $json.body.playlist_uri || $json.body.uri || $json.body.context_uri }}"
-      },
-      "id": "sp-playlist",
-      "name": "Start playlist",
-      "type": "n8n-nodes-base.spotify",
-      "typeVersion": 1,
-      "position": [
-        1080,
-        900
+        880,
+        20
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -169,13 +97,13 @@
         "operation": "getUserPlaylists",
         "returnAll": true
       },
-      "id": "sp-list-playlists",
+      "id": "sp-list-pl",
       "name": "List playlists",
       "type": "n8n-nodes-base.spotify",
       "typeVersion": 1,
       "position": [
-        700,
-        1080
+        880,
+        180
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -186,30 +114,67 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const items = $input.all().map(i => i.json || {});\nconst playlists = items.map((p) => ({\n  id: p.id,\n  uri: p.uri,\n  name: p.name,\n  owner: p.owner?.display_name || p.owner?.id || null,\n  tracks: p.tracks?.total ?? null,\n  public: p.public ?? null,\n}));\nreturn [{ json: { playlists, total: playlists.length } }];"
+        "jsCode": "const items = $input.all().map(i => i.json || {});\nconst playlists = items.map(p => ({\n  id: p.id, uri: p.uri, name: p.name,\n  owner: p.owner?.display_name || p.owner?.id || null,\n  tracks: p.tracks?.total ?? null, public: p.public ?? null,\n}));\nreturn [{ json: { playlists, total: playlists.length } }];"
       },
-      "id": "code-format-playlists",
+      "id": "code-fmt-pl",
       "name": "Format playlists",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        900,
-        1080
+        1100,
+        180
       ]
     },
     {
       "parameters": {
-        "resource": "player",
-        "operation": "startMusic",
-        "id": "={{ $json.body.playlist_uri || $json.body.uri || $json.body.context_uri || $json.body.playlist_id }}"
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { ok: true, probe: true, message: 'Spotify webhook online' } }];"
       },
-      "id": "sp-switch-playlist",
-      "name": "Switch playlist",
-      "type": "n8n-nodes-base.spotify",
-      "typeVersion": 1,
+      "id": "code-probe",
+      "name": "Probe ok",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
       "position": [
-        1080,
-        1260
+        880,
+        340
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "return [{ json: { error: true, message: 'Acao nao suportada. Use: pause, play, resume, next, previous, volume, list_playlists, switch_playlist, play_track, play_genre.' } }];"
+      },
+      "id": "code-unsup",
+      "name": "Unsupported",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        480
+      ]
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "https://api.spotify.com/v1/me/player/devices",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "spotifyOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-get-dev",
+      "name": "Get devices",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        740
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -220,15 +185,239 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const body = $json.body || {};\nconst rawAction = String($json.action || '').trim();\nconst normalizedAction = String($json.normalizedAction || '').trim();\n\nconst directUri = body.track_uri || body.uri || body.track_id || null;\nif (directUri) {\n  return [{ json: { ...$json, trackUri: directUri, trackQuery: null } }];\n}\n\nlet q =\n  body.track_query ||\n  body.track_name ||\n  body.track ||\n  body.song ||\n  body.music ||\n  body.query ||\n  '';\n\nif (!q && (rawAction || normalizedAction)) {\n  const source = normalizedAction || rawAction.toLowerCase();\n  q = source\n    .replace(/^tocar?_?musica_?/i, '')\n    .replace(/^play_?track_?/i, '')\n    .replace(/^toca_?/i, '')\n    .replace(/^play_?/i, '')\n    .replace(/_?pfv$/i, '')\n    .replace(/_?por_favor$/i, '')\n    .replace(/_/g, ' ')\n    .trim();\n}\n\nconst artist = String(body.artist || body.artista || '').trim();\n\nif (!q && !artist) {\n  return [{ json: { error: true, message: 'Para tocar música específica, envie track_uri/track_id ou track_name ou artist.' } }];\n}\n\nlet trackQuery;\nif (!q && artist) {\n  trackQuery = `artist:${artist}`;\n} else if (q && artist) {\n  trackQuery = `track:${q} artist:${artist}`;\n} else {\n  trackQuery = q;\n}\nreturn [{ json: { ...$json, trackQuery } }];"
+        "jsCode": "const root = $input.first().json || {};\nconst raw = root.body || root;\n\n// Detectar erro HTTP (modo fullResponse)\nif (root.statusCode && root.statusCode >= 400) {\n  const msg = (typeof raw === 'object' && raw !== null && raw.error && raw.error.message)\n    ? raw.error.message\n    : `Spotify API erro HTTP ${root.statusCode}`;\n  return [{ json: { error: true, message: msg } }];\n}\n\nconst devices = Array.isArray(raw) ? raw : (raw.devices || []);\nif (!devices.length) {\n  return [{ json: { error: true, message:\n    'Nenhum dispositivo Spotify disponivel. Abra o app no celular, PC ou Web Player e tente novamente.' } }];\n}\nconst usable = devices.filter(d => d && d.id && !d.is_restricted);\nif (!usable.length) {\n  return [{ json: { error: true, message: 'Dispositivos encontrados, mas nenhum permite reproducao.' } }];\n}\nconst score = d => {\n  if (d.is_active) return -10;\n  const t = String(d.type || '').toLowerCase();\n  return t === 'computer' ? 0 : t === 'smartphone' ? 1 : 5;\n};\nusable.sort((a, b) => score(a) - score(b));\nconst pick = usable[0];\nreturn [{ json: { deviceId: pick.id, deviceName: pick.name || '', deviceType: pick.type || '' } }];"
       },
-      "id": "code-resolve-track",
+      "id": "code-pick-dev",
+      "name": "Pick device",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        880,
+        740
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.error === true ? 1 : 0 }}"
+      },
+      "id": "sw-dev-ok",
+      "name": "Device ok?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1100,
+        740
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "expression",
+        "numberOutputs": 8,
+        "output": "={{ ({'resume':0,'nextSong':1,'previousSong':2,'volume':3,'startMusic':4,'switchPlaylist':5,'playTrack':6,'playGenre':7})[$('Map action').first().json.spotifyOp] ?? 0 }}"
+      },
+      "id": "sw-actions",
+      "name": "Route actions",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1320,
+        740
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://api.spotify.com/v1/me/player/play?device_id=' + $('Pick device').first().json.deviceId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "spotifyOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-resume",
+      "name": "Resume",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        460
+      ],
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.spotify.com/v1/me/player/next?device_id=' + $('Pick device').first().json.deviceId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "spotifyOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-next",
+      "name": "Next",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        600
+      ],
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ 'https://api.spotify.com/v1/me/player/previous?device_id=' + $('Pick device').first().json.deviceId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "spotifyOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-prev",
+      "name": "Previous",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        740
+      ],
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://api.spotify.com/v1/me/player/volume?volume_percent=' + Number($('Map action').first().json.body.volume_percent || $('Map action').first().json.body.volume || 50) + '&device_id=' + $('Pick device').first().json.deviceId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "spotifyOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-vol",
+      "name": "Volume",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        880
+      ],
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://api.spotify.com/v1/me/player/play?device_id=' + $('Pick device').first().json.deviceId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "spotifyOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ context_uri: $('Map action').first().json.body.playlist_uri || $('Map action').first().json.body.uri || $('Map action').first().json.body.context_uri }) }}"
+      },
+      "id": "http-start-pl",
+      "name": "Start playlist",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        1020
+      ],
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://api.spotify.com/v1/me/player/play?device_id=' + $('Pick device').first().json.deviceId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "spotifyOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ context_uri: $('Map action').first().json.body.playlist_uri || $('Map action').first().json.body.uri || $('Map action').first().json.body.context_uri || $('Map action').first().json.body.playlist_id }) }}"
+      },
+      "id": "http-switch-pl",
+      "name": "Switch playlist",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1540,
+        1160
+      ],
+      "credentials": {
+        "spotifyOAuth2Api": {
+          "name": "Spotify account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const body = $('Map action').first().json.body || {};\nconst rawAction = String($('Map action').first().json.action || '').trim();\nconst normalizedAction = String($('Map action').first().json.normalizedAction || '').trim();\n\nconst directUri = body.track_uri || body.uri || body.track_id || null;\nif (directUri) return [{ json: { trackUri: directUri } }];\n\nlet q = body.track_query || body.track_name || body.track\n     || body.song || body.music || body.query || '';\n\nif (!q && (rawAction || normalizedAction)) {\n  const src = (normalizedAction || rawAction.toLowerCase())\n    .replace(/^tocar?_?musica_?/i, '')\n    .replace(/^play_?track_?/i, '')\n    .replace(/^toca_?/i, '')\n    .replace(/^play_?/i, '')\n    .replace(/_?pfv$/i, '')\n    .replace(/_?por_favor$/i, '')\n    .replace(/_/g, ' ').trim();\n  if (src) q = src;\n}\n\nconst artist = String(body.artist || body.artista || '').trim();\nif (!q && !artist) {\n  return [{ json: { error: true, message:\n    'Para tocar musica especifica, envie track_name, track_uri ou artist.' } }];\n}\n\nlet trackQuery;\nif (!q && artist) trackQuery = `artist:${artist}`;\nelse if (q && artist) trackQuery = `track:${q} artist:${artist}`;\nelse trackQuery = q;\nreturn [{ json: { trackQuery } }];"
+      },
+      "id": "code-resolve-tr",
       "name": "Resolve track input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        700,
-        1440
+        1540,
+        1340
       ]
     },
     {
@@ -239,13 +428,13 @@
         "returnAll": false,
         "limit": 1
       },
-      "id": "sp-search-track",
+      "id": "sp-search-tr",
       "name": "Search track",
       "type": "n8n-nodes-base.spotify",
       "typeVersion": 1,
       "position": [
-        860,
-        1440
+        1760,
+        1340
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -256,15 +445,15 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const inItem = $input.first().json || {};\nif (inItem.error) return [{ json: inItem }];\n\nconst uri = inItem.uri || null;\nif (!uri) {\n  return [{ json: { error: true, message: `Nao encontrei faixa para: ${$json.trackQuery || 'consulta vazia'}` } }];\n}\n\nreturn [{ json: { ...$json, trackUri: uri, matchedTrack: inItem.name || null, matchedArtist: inItem.artists?.[0]?.name || null } }];"
+        "jsCode": "const item = $input.first().json || {};\nif (item.error) return [{ json: item }];\nconst uri = item.uri || null;\nif (!uri) {\n  let q = '';\n  try { q = $('Resolve track input').first().json.trackQuery || ''; } catch(e) {}\n  return [{ json: { error: true, message: `Nao encontrei faixa para: ${q || 'consulta vazia'}` } }];\n}\nreturn [{ json: {\n  trackUri: uri,\n  matchedTrack: item.name || null,\n  matchedArtist: item.artists?.[0]?.name || null\n} }];"
       },
-      "id": "code-pick-track-uri",
+      "id": "code-pick-uri",
       "name": "Pick track URI",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1020,
-        1440
+        1980,
+        1340
       ]
     },
     {
@@ -273,61 +462,40 @@
         "numberOutputs": 2,
         "output": "={{ $json.error === true ? 1 : 0 }}"
       },
-      "id": "sw-track-resolved",
-      "name": "Track resolved?",
+      "id": "sw-tr-ok",
+      "name": "Track ok?",
       "type": "n8n-nodes-base.switch",
       "typeVersion": 3.2,
       "position": [
-        1140,
-        1440
+        2200,
+        1340
       ]
     },
     {
       "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const prev = $('Pick track URI').first().json || {};\nconst dev = $input.first().json || {};\nreturn [{ json: { ...prev, ...dev, trackUri: prev.trackUri } }];"
+        "method": "PUT",
+        "url": "={{ 'https://api.spotify.com/v1/me/player/play?device_id=' + $('Pick device').first().json.deviceId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "spotifyOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ uris: [$json.trackUri] }) }}"
       },
-      "id": "code-merge-playtr",
-      "name": "Restore track after transfer",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
+      "id": "http-play-tr",
+      "name": "Play track",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
       "position": [
-        1840,
-        1440
-      ]
-    },
-    {
-      "parameters": {
-        "resource": "player",
-        "operation": "addSongToQueue",
-        "id": "={{ $json.trackUri }}"
-      },
-      "id": "sp-queue-track",
-      "name": "Queue track",
-      "type": "n8n-nodes-base.spotify",
-      "typeVersion": 1,
-      "position": [
-        2000,
-        1440
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "resource": "player",
-        "operation": "nextSong"
-      },
-      "id": "sp-play-queued",
-      "name": "Play queued track",
-      "type": "n8n-nodes-base.spotify",
-      "typeVersion": 1,
-      "position": [
-        2160,
-        1440
+        2420,
+        1340
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -338,666 +506,57 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "const body = $json.body || {};\nconst raw = String(body.genre || body.genero || '').trim().toLowerCase();\nconst byGenre = {\n  pop: 'spotify:playlist:37i9dQZF1DXcBWIGoYBM5M',\n  rock: 'spotify:playlist:37i9dQZF1DWXRqgorJj26U',\n  jazz: 'spotify:playlist:37i9dQZF1DXbITWG1ZJKYt',\n  lofi: 'spotify:playlist:37i9dQZF1DXdxcBWuJkbcy',\n  'lo-fi': 'spotify:playlist:37i9dQZF1DXdxcBWuJkbcy',\n  eletronic: 'spotify:playlist:37i9dQZF1DX4dyzvuaRJ0n',\n  eletrônica: 'spotify:playlist:37i9dQZF1DX4dyzvuaRJ0n',\n  electronic: 'spotify:playlist:37i9dQZF1DX4dyzvuaRJ0n',\n  funk: 'spotify:playlist:37i9dQZF1DXaXB8fQg7xif',\n  rap: 'spotify:playlist:37i9dQZF1DX0XUsuxWHRQd',\n  hiphop: 'spotify:playlist:37i9dQZF1DX0XUsuxWHRQd',\n  hip_hop: 'spotify:playlist:37i9dQZF1DX0XUsuxWHRQd',\n  classica: 'spotify:playlist:37i9dQZF1DWWEJlAGA9gs0',\n  clássica: 'spotify:playlist:37i9dQZF1DWWEJlAGA9gs0',\n  classical: 'spotify:playlist:37i9dQZF1DWWEJlAGA9gs0',\n};\nconst genreUri = byGenre[raw] || body.playlist_uri || body.uri || null;\nif (!genreUri) {\n  return [{ json: { error: true, message: 'Genero nao reconhecido. Envie genre ou playlist_uri.' } }];\n}\nreturn [{ json: { ...$json, genreUri } }];"
+        "jsCode": "const body = $('Map action').first().json.body || {};\nconst raw = String(body.genre || body.genero || '').trim().toLowerCase();\nconst map = {\n  pop: 'spotify:playlist:37i9dQZF1DXcBWIGoYBM5M',\n  rock: 'spotify:playlist:37i9dQZF1DWXRqgorJj26U',\n  jazz: 'spotify:playlist:37i9dQZF1DXbITWG1ZJKYt',\n  lofi: 'spotify:playlist:37i9dQZF1DXdxcBWuJkbcy',\n  'lo-fi': 'spotify:playlist:37i9dQZF1DXdxcBWuJkbcy',\n  electronic: 'spotify:playlist:37i9dQZF1DX4dyzvuaRJ0n',\n  eletronic: 'spotify:playlist:37i9dQZF1DX4dyzvuaRJ0n',\n  eletronica: 'spotify:playlist:37i9dQZF1DX4dyzvuaRJ0n',\n  'eletrônica': 'spotify:playlist:37i9dQZF1DX4dyzvuaRJ0n',\n  funk: 'spotify:playlist:37i9dQZF1DXaXB8fQg7xif',\n  rap: 'spotify:playlist:37i9dQZF1DX0XUsuxWHRQd',\n  hiphop: 'spotify:playlist:37i9dQZF1DX0XUsuxWHRQd',\n  hip_hop: 'spotify:playlist:37i9dQZF1DX0XUsuxWHRQd',\n  classica: 'spotify:playlist:37i9dQZF1DWWEJlAGA9gs0',\n  'clássica': 'spotify:playlist:37i9dQZF1DWWEJlAGA9gs0',\n  classical: 'spotify:playlist:37i9dQZF1DWWEJlAGA9gs0',\n};\nconst uri = map[raw] || body.playlist_uri || body.uri || null;\nif (!uri) {\n  return [{ json: { error: true, message: 'Genero nao reconhecido. Envie genre ou playlist_uri.' } }];\n}\nreturn [{ json: { genreUri: uri } }];"
       },
-      "id": "code-genre-map",
+      "id": "code-genre",
       "name": "Genre to playlist",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        700,
-        1620
+        1540,
+        1520
       ]
     },
     {
       "parameters": {
-        "resource": "player",
-        "operation": "startMusic",
-        "id": "={{ $json.genreUri }}"
+        "mode": "expression",
+        "numberOutputs": 2,
+        "output": "={{ $json.error === true ? 1 : 0 }}"
       },
-      "id": "sp-play-genre",
+      "id": "sw-genre-ok",
+      "name": "Genre ok?",
+      "type": "n8n-nodes-base.switch",
+      "typeVersion": 3.2,
+      "position": [
+        1760,
+        1520
+      ]
+    },
+    {
+      "parameters": {
+        "method": "PUT",
+        "url": "={{ 'https://api.spotify.com/v1/me/player/play?device_id=' + $('Pick device').first().json.deviceId }}",
+        "authentication": "predefinedCredentialType",
+        "nodeCredentialType": "spotifyOAuth2Api",
+        "options": {
+          "response": {
+            "response": {
+              "fullResponse": true,
+              "neverError": true
+            }
+          }
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ context_uri: $json.genreUri }) }}"
+      },
+      "id": "http-play-genre",
       "name": "Play genre",
-      "type": "n8n-nodes-base.spotify",
-      "typeVersion": 1,
-      "position": [
-        1080,
-        1620
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "return [{ json: { ok: true, probe: true, message: 'Spotify webhook online' } }];"
-      },
-      "id": "code-probe-ok",
-      "name": "Connectivity probe ok",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        700,
-        1780
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "return [{\n  json: {\n    error: true,\n    message: 'Acao nao suportada pelo no nativo Spotify no n8n (ex.: shuffle, repeat). '\n      + 'Use outro fluxo com HTTP Request ou escolha: pause, play, resume, next, previous, volume, playlist, '\n      + 'list_playlists, switch_playlist, play_track, play_genre.'\n  }\n}];"
-      },
-      "id": "code-bad",
-      "name": "Unsupported action",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        700,
-        1940
-      ]
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "https://api.spotify.com/v1/me/player/devices",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "options": {}
-      },
-      "id": "http-dev-resume",
-      "name": "Get devices · resume",
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        520,
-        180
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const root = $input.first().json || {};\nconst devices = root.devices || root.body?.devices || [];\nif (!devices.length) {\n  return [{\n    json: {\n      error: true,\n      message:\n        'Nenhum dispositivo Spotify disponivel. Abra o app Spotify no celular, PC ou Web Player '\n        + '(play.spotify.com) e faca login nesta mesma conta; depois tente de novo.'\n    }\n  }];\n}\nconst usable = devices.filter((d) => d && d.id && !d.is_restricted);\nif (!usable.length) {\n  return [{ json: { error: true, message: 'Dispositivos encontrados, mas nenhum permite reproducao.' } }];\n}\nconst score = (d) => {\n  const t = String(d.type || '').toLowerCase();\n  if (t === 'computer') return 0;\n  if (t === 'smartphone') return 1;\n  if (t === 'tablet') return 2;\n  return 5;\n};\nusable.sort((a, b) => score(a) - score(b));\nconst active = usable.find((d) => d.is_active);\nconst pick = active || usable[0];\nreturn [{\n  json: {\n    deviceId: pick.id,\n    deviceName: pick.name || '',\n    deviceType: pick.type || ''\n  }\n}];"
-      },
-      "id": "code-dev-resume",
-      "name": "Pick device · resume",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        650,
-        180
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "expression",
-        "numberOutputs": 2,
-        "output": "={{ $json.error === true ? 1 : 0 }}"
-      },
-      "id": "sw-dev-resume",
-      "name": "Device ok · resume",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.2,
-      "position": [
-        780,
-        180
-      ]
-    },
-    {
-      "parameters": {
-        "method": "PUT",
-        "url": "https://api.spotify.com/v1/me/player",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ device_ids: [$json.deviceId], play: false }) }}",
-        "options": {}
-      },
-      "id": "http-xfer-resume",
-      "name": "Transfer · resume",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        910,
-        180
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "https://api.spotify.com/v1/me/player/devices",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "options": {}
-      },
-      "id": "http-dev-next",
-      "name": "Get devices · next",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        520,
-        360
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const root = $input.first().json || {};\nconst devices = root.devices || root.body?.devices || [];\nif (!devices.length) {\n  return [{\n    json: {\n      error: true,\n      message:\n        'Nenhum dispositivo Spotify disponivel. Abra o app Spotify no celular, PC ou Web Player '\n        + '(play.spotify.com) e faca login nesta mesma conta; depois tente de novo.'\n    }\n  }];\n}\nconst usable = devices.filter((d) => d && d.id && !d.is_restricted);\nif (!usable.length) {\n  return [{ json: { error: true, message: 'Dispositivos encontrados, mas nenhum permite reproducao.' } }];\n}\nconst score = (d) => {\n  const t = String(d.type || '').toLowerCase();\n  if (t === 'computer') return 0;\n  if (t === 'smartphone') return 1;\n  if (t === 'tablet') return 2;\n  return 5;\n};\nusable.sort((a, b) => score(a) - score(b));\nconst active = usable.find((d) => d.is_active);\nconst pick = active || usable[0];\nreturn [{\n  json: {\n    deviceId: pick.id,\n    deviceName: pick.name || '',\n    deviceType: pick.type || ''\n  }\n}];"
-      },
-      "id": "code-dev-next",
-      "name": "Pick device · next",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        650,
-        360
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "expression",
-        "numberOutputs": 2,
-        "output": "={{ $json.error === true ? 1 : 0 }}"
-      },
-      "id": "sw-dev-next",
-      "name": "Device ok · next",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.2,
-      "position": [
-        780,
-        360
-      ]
-    },
-    {
-      "parameters": {
-        "method": "PUT",
-        "url": "https://api.spotify.com/v1/me/player",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ device_ids: [$json.deviceId], play: false }) }}",
-        "options": {}
-      },
-      "id": "http-xfer-next",
-      "name": "Transfer · next",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        910,
-        360
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "https://api.spotify.com/v1/me/player/devices",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "options": {}
-      },
-      "id": "http-dev-prev",
-      "name": "Get devices · prev",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        520,
-        540
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const root = $input.first().json || {};\nconst devices = root.devices || root.body?.devices || [];\nif (!devices.length) {\n  return [{\n    json: {\n      error: true,\n      message:\n        'Nenhum dispositivo Spotify disponivel. Abra o app Spotify no celular, PC ou Web Player '\n        + '(play.spotify.com) e faca login nesta mesma conta; depois tente de novo.'\n    }\n  }];\n}\nconst usable = devices.filter((d) => d && d.id && !d.is_restricted);\nif (!usable.length) {\n  return [{ json: { error: true, message: 'Dispositivos encontrados, mas nenhum permite reproducao.' } }];\n}\nconst score = (d) => {\n  const t = String(d.type || '').toLowerCase();\n  if (t === 'computer') return 0;\n  if (t === 'smartphone') return 1;\n  if (t === 'tablet') return 2;\n  return 5;\n};\nusable.sort((a, b) => score(a) - score(b));\nconst active = usable.find((d) => d.is_active);\nconst pick = active || usable[0];\nreturn [{\n  json: {\n    deviceId: pick.id,\n    deviceName: pick.name || '',\n    deviceType: pick.type || ''\n  }\n}];"
-      },
-      "id": "code-dev-prev",
-      "name": "Pick device · prev",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        650,
-        540
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "expression",
-        "numberOutputs": 2,
-        "output": "={{ $json.error === true ? 1 : 0 }}"
-      },
-      "id": "sw-dev-prev",
-      "name": "Device ok · prev",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.2,
-      "position": [
-        780,
-        540
-      ]
-    },
-    {
-      "parameters": {
-        "method": "PUT",
-        "url": "https://api.spotify.com/v1/me/player",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ device_ids: [$json.deviceId], play: false }) }}",
-        "options": {}
-      },
-      "id": "http-xfer-prev",
-      "name": "Transfer · prev",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        910,
-        540
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "https://api.spotify.com/v1/me/player/devices",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "options": {}
-      },
-      "id": "http-dev-vol",
-      "name": "Get devices · vol",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        520,
-        720
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const root = $input.first().json || {};\nconst devices = root.devices || root.body?.devices || [];\nif (!devices.length) {\n  return [{\n    json: {\n      error: true,\n      message:\n        'Nenhum dispositivo Spotify disponivel. Abra o app Spotify no celular, PC ou Web Player '\n        + '(play.spotify.com) e faca login nesta mesma conta; depois tente de novo.'\n    }\n  }];\n}\nconst usable = devices.filter((d) => d && d.id && !d.is_restricted);\nif (!usable.length) {\n  return [{ json: { error: true, message: 'Dispositivos encontrados, mas nenhum permite reproducao.' } }];\n}\nconst score = (d) => {\n  const t = String(d.type || '').toLowerCase();\n  if (t === 'computer') return 0;\n  if (t === 'smartphone') return 1;\n  if (t === 'tablet') return 2;\n  return 5;\n};\nusable.sort((a, b) => score(a) - score(b));\nconst active = usable.find((d) => d.is_active);\nconst pick = active || usable[0];\nreturn [{\n  json: {\n    deviceId: pick.id,\n    deviceName: pick.name || '',\n    deviceType: pick.type || ''\n  }\n}];"
-      },
-      "id": "code-dev-vol",
-      "name": "Pick device · vol",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        650,
-        720
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "expression",
-        "numberOutputs": 2,
-        "output": "={{ $json.error === true ? 1 : 0 }}"
-      },
-      "id": "sw-dev-vol",
-      "name": "Device ok · vol",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.2,
-      "position": [
-        780,
-        720
-      ]
-    },
-    {
-      "parameters": {
-        "method": "PUT",
-        "url": "https://api.spotify.com/v1/me/player",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ device_ids: [$json.deviceId], play: false }) }}",
-        "options": {}
-      },
-      "id": "http-xfer-vol",
-      "name": "Transfer · vol",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        910,
-        720
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "https://api.spotify.com/v1/me/player/devices",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "options": {}
-      },
-      "id": "http-dev-startpl",
-      "name": "Get devices · startpl",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        520,
-        900
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const root = $input.first().json || {};\nconst devices = root.devices || root.body?.devices || [];\nif (!devices.length) {\n  return [{\n    json: {\n      error: true,\n      message:\n        'Nenhum dispositivo Spotify disponivel. Abra o app Spotify no celular, PC ou Web Player '\n        + '(play.spotify.com) e faca login nesta mesma conta; depois tente de novo.'\n    }\n  }];\n}\nconst usable = devices.filter((d) => d && d.id && !d.is_restricted);\nif (!usable.length) {\n  return [{ json: { error: true, message: 'Dispositivos encontrados, mas nenhum permite reproducao.' } }];\n}\nconst score = (d) => {\n  const t = String(d.type || '').toLowerCase();\n  if (t === 'computer') return 0;\n  if (t === 'smartphone') return 1;\n  if (t === 'tablet') return 2;\n  return 5;\n};\nusable.sort((a, b) => score(a) - score(b));\nconst active = usable.find((d) => d.is_active);\nconst pick = active || usable[0];\nreturn [{\n  json: {\n    deviceId: pick.id,\n    deviceName: pick.name || '',\n    deviceType: pick.type || ''\n  }\n}];"
-      },
-      "id": "code-dev-startpl",
-      "name": "Pick device · startpl",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        650,
-        900
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "expression",
-        "numberOutputs": 2,
-        "output": "={{ $json.error === true ? 1 : 0 }}"
-      },
-      "id": "sw-dev-startpl",
-      "name": "Device ok · startpl",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.2,
-      "position": [
-        780,
-        900
-      ]
-    },
-    {
-      "parameters": {
-        "method": "PUT",
-        "url": "https://api.spotify.com/v1/me/player",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ device_ids: [$json.deviceId], play: false }) }}",
-        "options": {}
-      },
-      "id": "http-xfer-startpl",
-      "name": "Transfer · startpl",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        910,
-        900
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "https://api.spotify.com/v1/me/player/devices",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "options": {}
-      },
-      "id": "http-dev-switchpl",
-      "name": "Get devices · switchpl",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        520,
-        1260
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const root = $input.first().json || {};\nconst devices = root.devices || root.body?.devices || [];\nif (!devices.length) {\n  return [{\n    json: {\n      error: true,\n      message:\n        'Nenhum dispositivo Spotify disponivel. Abra o app Spotify no celular, PC ou Web Player '\n        + '(play.spotify.com) e faca login nesta mesma conta; depois tente de novo.'\n    }\n  }];\n}\nconst usable = devices.filter((d) => d && d.id && !d.is_restricted);\nif (!usable.length) {\n  return [{ json: { error: true, message: 'Dispositivos encontrados, mas nenhum permite reproducao.' } }];\n}\nconst score = (d) => {\n  const t = String(d.type || '').toLowerCase();\n  if (t === 'computer') return 0;\n  if (t === 'smartphone') return 1;\n  if (t === 'tablet') return 2;\n  return 5;\n};\nusable.sort((a, b) => score(a) - score(b));\nconst active = usable.find((d) => d.is_active);\nconst pick = active || usable[0];\nreturn [{\n  json: {\n    deviceId: pick.id,\n    deviceName: pick.name || '',\n    deviceType: pick.type || ''\n  }\n}];"
-      },
-      "id": "code-dev-switchpl",
-      "name": "Pick device · switchpl",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        650,
-        1260
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "expression",
-        "numberOutputs": 2,
-        "output": "={{ $json.error === true ? 1 : 0 }}"
-      },
-      "id": "sw-dev-switchpl",
-      "name": "Device ok · switchpl",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.2,
-      "position": [
-        780,
-        1260
-      ]
-    },
-    {
-      "parameters": {
-        "method": "PUT",
-        "url": "https://api.spotify.com/v1/me/player",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ device_ids: [$json.deviceId], play: false }) }}",
-        "options": {}
-      },
-      "id": "http-xfer-switchpl",
-      "name": "Transfer · switchpl",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        910,
-        1260
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "https://api.spotify.com/v1/me/player/devices",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "options": {}
-      },
-      "id": "http-dev-genre",
-      "name": "Get devices · genre",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        520,
-        1620
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const root = $input.first().json || {};\nconst devices = root.devices || root.body?.devices || [];\nif (!devices.length) {\n  return [{\n    json: {\n      error: true,\n      message:\n        'Nenhum dispositivo Spotify disponivel. Abra o app Spotify no celular, PC ou Web Player '\n        + '(play.spotify.com) e faca login nesta mesma conta; depois tente de novo.'\n    }\n  }];\n}\nconst usable = devices.filter((d) => d && d.id && !d.is_restricted);\nif (!usable.length) {\n  return [{ json: { error: true, message: 'Dispositivos encontrados, mas nenhum permite reproducao.' } }];\n}\nconst score = (d) => {\n  const t = String(d.type || '').toLowerCase();\n  if (t === 'computer') return 0;\n  if (t === 'smartphone') return 1;\n  if (t === 'tablet') return 2;\n  return 5;\n};\nusable.sort((a, b) => score(a) - score(b));\nconst active = usable.find((d) => d.is_active);\nconst pick = active || usable[0];\nreturn [{\n  json: {\n    deviceId: pick.id,\n    deviceName: pick.name || '',\n    deviceType: pick.type || ''\n  }\n}];"
-      },
-      "id": "code-dev-genre",
-      "name": "Pick device · genre",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        650,
-        1620
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "expression",
-        "numberOutputs": 2,
-        "output": "={{ $json.error === true ? 1 : 0 }}"
-      },
-      "id": "sw-dev-genre",
-      "name": "Device ok · genre",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.2,
-      "position": [
-        780,
-        1620
-      ]
-    },
-    {
-      "parameters": {
-        "method": "PUT",
-        "url": "https://api.spotify.com/v1/me/player",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ device_ids: [$json.deviceId], play: false }) }}",
-        "options": {}
-      },
-      "id": "http-xfer-genre",
-      "name": "Transfer · genre",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        910,
-        1620
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "method": "GET",
-        "url": "https://api.spotify.com/v1/me/player/devices",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "options": {}
-      },
-      "id": "http-dev-playtr",
-      "name": "Get devices · playtr",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1180,
-        1440
-      ],
-      "credentials": {
-        "spotifyOAuth2Api": {
-          "name": "Spotify account"
-        }
-      }
-    },
-    {
-      "parameters": {
-        "mode": "runOnceForAllItems",
-        "jsCode": "const root = $input.first().json || {};\nconst devices = root.devices || root.body?.devices || [];\nif (!devices.length) {\n  return [{\n    json: {\n      error: true,\n      message:\n        'Nenhum dispositivo Spotify disponivel. Abra o app Spotify no celular, PC ou Web Player '\n        + '(play.spotify.com) e faca login nesta mesma conta; depois tente de novo.'\n    }\n  }];\n}\nconst usable = devices.filter((d) => d && d.id && !d.is_restricted);\nif (!usable.length) {\n  return [{ json: { error: true, message: 'Dispositivos encontrados, mas nenhum permite reproducao.' } }];\n}\nconst score = (d) => {\n  const t = String(d.type || '').toLowerCase();\n  if (t === 'computer') return 0;\n  if (t === 'smartphone') return 1;\n  if (t === 'tablet') return 2;\n  return 5;\n};\nusable.sort((a, b) => score(a) - score(b));\nconst active = usable.find((d) => d.is_active);\nconst pick = active || usable[0];\nreturn [{\n  json: {\n    deviceId: pick.id,\n    deviceName: pick.name || '',\n    deviceType: pick.type || ''\n  }\n}];"
-      },
-      "id": "code-dev-playtr",
-      "name": "Pick device · playtr",
-      "type": "n8n-nodes-base.code",
-      "typeVersion": 2,
-      "position": [
-        1310,
-        1440
-      ]
-    },
-    {
-      "parameters": {
-        "mode": "expression",
-        "numberOutputs": 2,
-        "output": "={{ $json.error === true ? 1 : 0 }}"
-      },
-      "id": "sw-dev-playtr",
-      "name": "Device ok · playtr",
-      "type": "n8n-nodes-base.switch",
-      "typeVersion": 3.2,
-      "position": [
-        1440,
-        1440
-      ]
-    },
-    {
-      "parameters": {
-        "method": "PUT",
-        "url": "https://api.spotify.com/v1/me/player",
-        "authentication": "predefinedCredentialType",
-        "nodeCredentialType": "spotifyOAuth2Api",
-        "sendBody": true,
-        "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ device_ids: [$json.deviceId], play: false }) }}",
-        "options": {}
-      },
-      "id": "http-xfer-playtr",
-      "name": "Transfer · playtr",
-      "type": "n8n-nodes-base.httpRequest",
-      "typeVersion": 4.2,
-      "position": [
-        1570,
-        1440
+        1980,
+        1520
       ],
       "credentials": {
         "spotifyOAuth2Api": {
@@ -1008,7 +567,7 @@
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ JSON.stringify({\n  ok: $json.error !== true,\n  action: $('Map action').first().json.action,\n  spotifyOp: $('Map action').first().json.spotifyOp,\n  result: $json\n}) }}",
+        "responseBody": "={{ (() => { let m = {}; try { m = $('Map action').first().json || {}; } catch(e) {} const r = $json || {}; const sc = r.statusCode; const ok = sc != null ? (sc >= 200 && sc < 300) : (r.error !== true); return JSON.stringify({ ok, action: m.action, spotifyOp: m.spotifyOp, result: r });})() }}",
         "options": {}
       },
       "id": "respond",
@@ -1016,8 +575,8 @@
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
       "position": [
-        1340,
-        420
+        2640,
+        740
       ]
     }
   ],
@@ -1037,53 +596,36 @@
       "main": [
         [
           {
-            "node": "Route",
+            "node": "Needs device?",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Route": {
+    "Needs device?": {
+      "main": [
+        [
+          {
+            "node": "Route no-device",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Get devices",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Route no-device": {
       "main": [
         [
           {
             "node": "Pause",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Get devices · resume",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Get devices · next",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Get devices · prev",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Get devices · vol",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Get devices · startpl",
             "type": "main",
             "index": 0
           }
@@ -1097,35 +639,14 @@
         ],
         [
           {
-            "node": "Get devices · switchpl",
+            "node": "Probe ok",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Resolve track input",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Genre to playlist",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Connectivity probe ok",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Unsupported action",
+            "node": "Unsupported",
             "type": "main",
             "index": 0
           }
@@ -1165,44 +686,55 @@
         ]
       ]
     },
-    "Resolve track input": {
+    "Probe ok": {
       "main": [
         [
           {
-            "node": "Search track",
+            "node": "Respond to Webhook",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Search track": {
+    "Unsupported": {
       "main": [
         [
           {
-            "node": "Pick track URI",
+            "node": "Respond to Webhook",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Pick track URI": {
+    "Get devices": {
       "main": [
         [
           {
-            "node": "Track resolved?",
+            "node": "Pick device",
             "type": "main",
             "index": 0
           }
         ]
       ]
     },
-    "Track resolved?": {
+    "Pick device": {
       "main": [
         [
           {
-            "node": "Get devices · playtr",
+            "node": "Device ok?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Device ok?": {
+      "main": [
+        [
+          {
+            "node": "Route actions",
             "type": "main",
             "index": 0
           }
@@ -1216,113 +748,7 @@
         ]
       ]
     },
-    "Restore track after transfer": {
-      "main": [
-        [
-          {
-            "node": "Queue track",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Queue track": {
-      "main": [
-        [
-          {
-            "node": "Play queued track",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Play queued track": {
-      "main": [
-        [
-          {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Genre to playlist": {
-      "main": [
-        [
-          {
-            "node": "Get devices · genre",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Connectivity probe ok": {
-      "main": [
-        [
-          {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Unsupported action": {
-      "main": [
-        [
-          {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Get devices · resume": {
-      "main": [
-        [
-          {
-            "node": "Pick device · resume",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Pick device · resume": {
-      "main": [
-        [
-          {
-            "node": "Device ok · resume",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Device ok · resume": {
-      "main": [
-        [
-          {
-            "node": "Transfer · resume",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transfer · resume": {
+    "Route actions": {
       "main": [
         [
           {
@@ -1330,360 +756,52 @@
             "type": "main",
             "index": 0
           }
-        ]
-      ]
-    },
-    "Get devices · next": {
-      "main": [
-        [
-          {
-            "node": "Pick device · next",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Pick device · next": {
-      "main": [
-        [
-          {
-            "node": "Device ok · next",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Device ok · next": {
-      "main": [
-        [
-          {
-            "node": "Transfer · next",
-            "type": "main",
-            "index": 0
-          }
         ],
-        [
-          {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transfer · next": {
-      "main": [
         [
           {
             "node": "Next",
             "type": "main",
             "index": 0
           }
-        ]
-      ]
-    },
-    "Get devices · prev": {
-      "main": [
-        [
-          {
-            "node": "Pick device · prev",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Pick device · prev": {
-      "main": [
-        [
-          {
-            "node": "Device ok · prev",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Device ok · prev": {
-      "main": [
-        [
-          {
-            "node": "Transfer · prev",
-            "type": "main",
-            "index": 0
-          }
         ],
-        [
-          {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transfer · prev": {
-      "main": [
         [
           {
             "node": "Previous",
             "type": "main",
             "index": 0
           }
-        ]
-      ]
-    },
-    "Get devices · vol": {
-      "main": [
-        [
-          {
-            "node": "Pick device · vol",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Pick device · vol": {
-      "main": [
-        [
-          {
-            "node": "Device ok · vol",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Device ok · vol": {
-      "main": [
-        [
-          {
-            "node": "Transfer · vol",
-            "type": "main",
-            "index": 0
-          }
         ],
-        [
-          {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transfer · vol": {
-      "main": [
         [
           {
             "node": "Volume",
             "type": "main",
             "index": 0
           }
-        ]
-      ]
-    },
-    "Get devices · startpl": {
-      "main": [
-        [
-          {
-            "node": "Pick device · startpl",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Pick device · startpl": {
-      "main": [
-        [
-          {
-            "node": "Device ok · startpl",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Device ok · startpl": {
-      "main": [
-        [
-          {
-            "node": "Transfer · startpl",
-            "type": "main",
-            "index": 0
-          }
         ],
-        [
-          {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transfer · startpl": {
-      "main": [
         [
           {
             "node": "Start playlist",
             "type": "main",
             "index": 0
           }
-        ]
-      ]
-    },
-    "Get devices · switchpl": {
-      "main": [
-        [
-          {
-            "node": "Pick device · switchpl",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Pick device · switchpl": {
-      "main": [
-        [
-          {
-            "node": "Device ok · switchpl",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Device ok · switchpl": {
-      "main": [
-        [
-          {
-            "node": "Transfer · switchpl",
-            "type": "main",
-            "index": 0
-          }
         ],
-        [
-          {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transfer · switchpl": {
-      "main": [
         [
           {
             "node": "Switch playlist",
             "type": "main",
             "index": 0
           }
-        ]
-      ]
-    },
-    "Get devices · genre": {
-      "main": [
+        ],
         [
           {
-            "node": "Pick device · genre",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Pick device · genre": {
-      "main": [
-        [
-          {
-            "node": "Device ok · genre",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Device ok · genre": {
-      "main": [
-        [
-          {
-            "node": "Transfer · genre",
+            "node": "Resolve track input",
             "type": "main",
             "index": 0
           }
         ],
         [
           {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transfer · genre": {
-      "main": [
-        [
-          {
-            "node": "Play genre",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Get devices · playtr": {
-      "main": [
-        [
-          {
-            "node": "Pick device · playtr",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Pick device · playtr": {
-      "main": [
-        [
-          {
-            "node": "Device ok · playtr",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Device ok · playtr": {
-      "main": [
-        [
-          {
-            "node": "Transfer · playtr",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "Respond to Webhook",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Transfer · playtr": {
-      "main": [
-        [
-          {
-            "node": "Restore track after transfer",
+            "node": "Genre to playlist",
             "type": "main",
             "index": 0
           }
@@ -1747,6 +865,97 @@
     },
     "Switch playlist": {
       "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Resolve track input": {
+      "main": [
+        [
+          {
+            "node": "Search track",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Search track": {
+      "main": [
+        [
+          {
+            "node": "Pick track URI",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Pick track URI": {
+      "main": [
+        [
+          {
+            "node": "Track ok?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Track ok?": {
+      "main": [
+        [
+          {
+            "node": "Play track",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Play track": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Genre to playlist": {
+      "main": [
+        [
+          {
+            "node": "Genre ok?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Genre ok?": {
+      "main": [
+        [
+          {
+            "node": "Play genre",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Respond to Webhook",

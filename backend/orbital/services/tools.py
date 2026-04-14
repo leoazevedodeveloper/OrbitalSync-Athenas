@@ -88,6 +88,7 @@ trigger_webhook_tool = {
         "play_track + track_name ou track_uri (+ artist opcional), play_genre + genre. "
         "Perguntas tipo 'quais playlists' → list_playlists. "
         "Google Calendar hook `athena-google-calendar`: use calendar_op `create` (default; title, starts_at_iso, …), "
+        "`update` (event_id + fields to change: title, starts_at_iso, ends_at_iso, notes), "
         "`delete` (event_id), or `list` (optional time_min/time_max ISO; default próximos 7 dias)."
     ),
     "parameters": {

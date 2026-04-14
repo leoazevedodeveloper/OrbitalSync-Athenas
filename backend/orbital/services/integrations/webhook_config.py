@@ -3,6 +3,7 @@ Carrega config/webhooks.json e dispara webhooks (ex.: n8n) com substituição ${
 """
 from __future__ import annotations
 
+import asyncio
 import copy
 import json
 import os
@@ -333,25 +334,7 @@ def _merge_hook_body_with_payload(
     act = merged.get("action")
     if isinstance(act, str):
         a = act.lower().strip()
-        # Sinônimos → play/resume: o n8n (map_action) roteia "resume" para o nó certo
-        _RESUME_ALIASES = frozenset(
-            {
-                "resume",
-                "play",
-                "start",
-                "unpause",
-                "continue",
-                "continuar",
-                "continua",
-                "retomar",
-                "despausar",
-                "tocar",
-            }
-        )
-        if a in _RESUME_ALIASES:
-            merged["action"] = "play"
-        else:
-            merged["action"] = a
+        merged["action"] = a
 
     return merged
 
@@ -389,20 +372,38 @@ async def fire_webhook_by_id(
 
     timeout = float(hook.get("timeout_sec") or g.get("default_timeout_sec") or 30)
 
-    try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
-            if method in ("GET", "HEAD"):
-                r = await client.request(method, url, headers=headers)
-            else:
-                r = await client.request(
-                    method,
-                    url,
-                    headers=headers,
-                    json=body if isinstance(body, (dict, list)) else body,
-                )
-    except httpx.RequestError as e:
-        err_text = f'{{"ok":false,"message":"HTTP client error: {str(e)[:500]}"}}'
-        return 0, err_text
+    last_status = 0
+    last_text = ""
+    _retry_statuses = frozenset({429, 502, 503, 504})
+    _max_retries = 2
 
-    snippet = (r.text or "")[:2000]
-    return r.status_code, snippet
+    for attempt in range(_max_retries + 1):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                if method in ("GET", "HEAD"):
+                    r = await client.request(method, url, headers=headers)
+                else:
+                    r = await client.request(
+                        method,
+                        url,
+                        headers=headers,
+                        json=body if isinstance(body, (dict, list)) else body,
+                    )
+            last_status = r.status_code
+            last_text = (r.text or "")[:2000]
+
+            if last_status not in _retry_statuses or attempt == _max_retries:
+                return last_status, last_text
+
+            # Retry com backoff; respeita Retry-After do Spotify (429)
+            wait = float(r.headers.get("Retry-After", 0.5 * (attempt + 1)))
+            await asyncio.sleep(min(wait, 5.0))
+
+        except httpx.RequestError as e:
+            last_status = 0
+            last_text = f'{{"ok":false,"message":"HTTP client error: {str(e)[:500]}"}}'
+            if attempt == _max_retries:
+                return last_status, last_text
+            await asyncio.sleep(0.5 * (attempt + 1))
+
+    return last_status, last_text

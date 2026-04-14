@@ -3,7 +3,7 @@
 | Pasta | Webhook (produção) | Conteúdo |
 |--------|-------------------|----------|
 | **`spotify/`** | `athena-spotify` | Spotify (nós nativos), `map_action.js`, gerador Python |
-| **`google-calendar/`** | `athena-google-calendar` | Google Calendar (create / list / delete) |
+| **`google-calendar/`** | `athena-google-calendar` | Google Calendar (create / update / list / delete) |
 
 Credenciais e URLs de produção alinham com **`config/webhooks.json`** (ou Supabase `athena_webhooks`).
 
