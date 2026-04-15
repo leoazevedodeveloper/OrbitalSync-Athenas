@@ -1,0 +1,713 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>OrbitalSync — Evolution API Setup</title>
+<style>
+  :root {
+    --bg: #0a0a0f;
+    --card: #12121a;
+    --border: #1e1e2e;
+    --accent: #7c5cfc;
+    --accent-hover: #9b7eff;
+    --success: #34d399;
+    --error: #f87171;
+    --warn: #fbbf24;
+    --text: #e4e4e7;
+    --text-muted: #71717a;
+    --radius: 12px;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    min-height: 100vh;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 2rem 1rem;
+  }
+  h1 {
+    font-size: 1.6rem;
+    font-weight: 700;
+    margin-bottom: .25rem;
+  }
+  .subtitle {
+    color: var(--text-muted);
+    font-size: .9rem;
+    margin-bottom: 2rem;
+  }
+  .container {
+    width: 100%;
+    max-width: 520px;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    padding: 1.25rem;
+  }
+  .card h2 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin-bottom: .75rem;
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+  }
+  .card h2 .step {
+    background: var(--accent);
+    color: #fff;
+    width: 24px; height: 24px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: .75rem;
+    font-weight: 700;
+    flex-shrink: 0;
+  }
+  .card h2 .step.done {
+    background: var(--success);
+  }
+  label {
+    display: block;
+    font-size: .8rem;
+    color: var(--text-muted);
+    margin-bottom: .3rem;
+  }
+  input[type="text"], input[type="password"] {
+    width: 100%;
+    padding: .6rem .75rem;
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    color: var(--text);
+    font-size: .9rem;
+    outline: none;
+    transition: border-color .2s;
+  }
+  input:focus { border-color: var(--accent); }
+  .input-group {
+    margin-bottom: .75rem;
+  }
+  .row {
+    display: flex;
+    gap: .75rem;
+  }
+  .row > * { flex: 1; }
+  button {
+    padding: .6rem 1.2rem;
+    border: none;
+    border-radius: 8px;
+    font-size: .85rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all .2s;
+    display: inline-flex;
+    align-items: center;
+    gap: .4rem;
+  }
+  .btn-primary {
+    background: var(--accent);
+    color: #fff;
+  }
+  .btn-primary:hover { background: var(--accent-hover); }
+  .btn-primary:disabled {
+    opacity: .5;
+    cursor: not-allowed;
+  }
+  .btn-secondary {
+    background: var(--border);
+    color: var(--text);
+  }
+  .btn-secondary:hover { background: #2a2a3a; }
+  .btn-danger {
+    background: #7f1d1d;
+    color: #fca5a5;
+  }
+  .btn-danger:hover { background: #991b1b; }
+  .btn-row {
+    display: flex;
+    gap: .5rem;
+    flex-wrap: wrap;
+  }
+  .status {
+    display: inline-flex;
+    align-items: center;
+    gap: .35rem;
+    padding: .3rem .7rem;
+    border-radius: 20px;
+    font-size: .78rem;
+    font-weight: 600;
+  }
+  .status-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+  .status-connected { background: #064e3b; color: var(--success); }
+  .status-connected .status-dot { background: var(--success); }
+  .status-disconnected { background: #451a03; color: var(--warn); }
+  .status-disconnected .status-dot { background: var(--warn); }
+  .status-error { background: #450a0a; color: var(--error); }
+  .status-error .status-dot { background: var(--error); }
+  .status-unknown { background: #1e1e2e; color: var(--text-muted); }
+  .status-unknown .status-dot { background: var(--text-muted); }
+
+  #qr-area {
+    text-align: center;
+    padding: 1rem;
+    min-height: 80px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: .75rem;
+  }
+  #qr-area img, #qr-area canvas {
+    border-radius: 8px;
+    max-width: 280px;
+    image-rendering: pixelated;
+  }
+  .qr-hint {
+    font-size: .8rem;
+    color: var(--text-muted);
+  }
+  .log-box {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: .75rem;
+    font-family: 'Cascadia Code', 'Fira Code', monospace;
+    font-size: .75rem;
+    color: var(--text-muted);
+    max-height: 180px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+  }
+  .log-box .ok { color: var(--success); }
+  .log-box .err { color: var(--error); }
+  .log-box .warn { color: var(--warn); }
+  .log-box .info { color: #60a5fa; }
+
+  .hidden { display: none !important; }
+  .spinner {
+    width: 18px; height: 18px;
+    border: 2px solid transparent;
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin .6s linear infinite;
+    display: inline-block;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  .webhook-status {
+    margin-top: .5rem;
+    font-size: .8rem;
+  }
+</style>
+</head>
+<body>
+
+<h1>OrbitalSync — WhatsApp Setup</h1>
+<p class="subtitle">Conecte seu WhatsApp pessoal via Evolution API</p>
+
+<div class="container">
+
+  <!-- STEP 0: Connection -->
+  <div class="card">
+    <h2><span class="step">0</span> Conexao com a Evolution API</h2>
+    <div class="row">
+      <div class="input-group">
+        <label>URL da Evolution API</label>
+        <input type="text" id="api-url" value="http://localhost:8085" placeholder="http://localhost:8085">
+      </div>
+      <div class="input-group">
+        <label>API Key</label>
+        <input type="password" id="api-key" value="e49c9e30-b6b2-48f4-9781-b4e7093747a5" placeholder="sua api key">
+      </div>
+    </div>
+    <div class="btn-row">
+      <button class="btn-primary" onclick="testConnection()">Testar conexao</button>
+    </div>
+    <div id="conn-status" style="margin-top:.5rem"></div>
+  </div>
+
+  <!-- STEP 1: Create Instance -->
+  <div class="card">
+    <h2><span class="step" id="step1-dot">1</span> Criar instancia</h2>
+    <div class="input-group">
+      <label>Nome da instancia</label>
+      <input type="text" id="instance-name" value="athenas" placeholder="athenas">
+    </div>
+    <div class="btn-row">
+      <button class="btn-primary" onclick="createInstance()">Criar instancia</button>
+      <button class="btn-secondary" onclick="listInstances()">Listar existentes</button>
+      <button class="btn-danger" onclick="deleteInstance()">Deletar</button>
+    </div>
+    <div id="instance-list" style="margin-top:.5rem"></div>
+  </div>
+
+  <!-- STEP 2: QR Code -->
+  <div class="card">
+    <h2><span class="step" id="step2-dot">2</span> Conectar WhatsApp (QR Code)</h2>
+    <div class="btn-row">
+      <button class="btn-primary" onclick="getQrCode()">Gerar QR Code</button>
+      <button class="btn-secondary" onclick="openManager()">Abrir Manager</button>
+      <button class="btn-secondary" onclick="checkStatus()">Verificar status</button>
+      <button class="btn-secondary" onclick="enableHistorySync()">Ativar sync de historico</button>
+      <button class="btn-secondary" onclick="restartConnection()">Reiniciar conexao</button>
+      <button class="btn-secondary" onclick="logout()">Desconectar</button>
+    </div>
+    <p style="font-size:.75rem;color:var(--text-muted);margin-top:.4rem">
+      Se o QR nao aparecer aqui, clique em "Abrir Manager" — e a UI oficial da Evolution API.
+    </p>
+    <div id="conn-state" style="margin-top:.5rem"></div>
+    <div id="qr-area" class="hidden"></div>
+  </div>
+
+  <!-- STEP 3: Webhook -->
+  <div class="card">
+    <h2><span class="step" id="step3-dot">3</span> Configurar Webhook (n8n)</h2>
+    <div class="input-group">
+      <label>URL do Webhook n8n</label>
+      <input type="text" id="webhook-url" value="https://n8n.orbitalsync.site/webhook/evolution-whatsapp-in" placeholder="https://n8n.orbitalsync.site/webhook/evolution-whatsapp-in">
+    </div>
+    <div class="btn-row">
+      <button class="btn-primary" onclick="setWebhook()">Configurar webhook</button>
+      <button class="btn-secondary" onclick="getWebhook()">Ver atual</button>
+    </div>
+    <div id="webhook-info" class="webhook-status"></div>
+  </div>
+
+  <!-- STEP 4: Test -->
+  <div class="card">
+    <h2><span class="step" id="step4-dot">4</span> Testar envio</h2>
+    <div class="row">
+      <div class="input-group">
+        <label>Numero (com DDI)</label>
+        <input type="text" id="test-phone" placeholder="5511999999999">
+      </div>
+    </div>
+    <div class="input-group">
+      <label>Mensagem</label>
+      <input type="text" id="test-msg" value="ATHENAS conectada ao WhatsApp! Teste de envio." placeholder="Mensagem de teste">
+    </div>
+    <div class="btn-row">
+      <button class="btn-primary" onclick="sendTest()">Enviar teste</button>
+    </div>
+  </div>
+
+  <!-- Log -->
+  <div class="card">
+    <h2>Log</h2>
+    <div class="log-box" id="log"></div>
+  </div>
+
+</div>
+
+<script>
+// ── Helpers ──
+const $ = id => document.getElementById(id);
+const apiUrl  = () => $('api-url').value.replace(/\/+$/, '');
+const apiKey  = () => $('api-key').value.trim();
+const instName = () => $('instance-name').value.trim() || 'athenas';
+
+function pickInstanceName(item) {
+  return item?.instanceName || item?.instance?.instanceName || item?.name || '';
+}
+
+async function fetchInstancesSafe() {
+  const r = await api('GET', '/instance/fetchInstances');
+  if (r._error) return [];
+  const items = Array.isArray(r) ? r : (r.instances || r.data || r.value || []);
+  return items
+    .map(i => ({
+      name: pickInstanceName(i),
+      state: i.connectionStatus || i.instance?.status || i.state || 'unknown',
+    }))
+    .filter(i => i.name);
+}
+
+async function resolveInstanceName() {
+  const typed = instName();
+  const items = await fetchInstancesSafe();
+
+  if (!items.length) {
+    log('Nenhuma instancia encontrada. Crie uma instancia primeiro.', 'warn');
+    return null;
+  }
+
+  const exact = items.find(i => i.name === typed);
+  if (exact) return exact.name;
+
+  const lower = typed.toLowerCase();
+  const ci = items.find(i => i.name.toLowerCase() === lower);
+  if (ci) {
+    $('instance-name').value = ci.name;
+    log(`Nome da instancia ajustado para "${ci.name}"`, 'info');
+    return ci.name;
+  }
+
+  if (items.length === 1) {
+    $('instance-name').value = items[0].name;
+    log(`Usando a unica instancia disponivel: "${items[0].name}"`, 'warn');
+    return items[0].name;
+  }
+
+  const names = items.map(i => i.name).join(', ');
+  log(`Instancia "${typed}" nao encontrada. Disponiveis: ${names}`, 'err');
+  return null;
+}
+
+function log(msg, cls = '') {
+  const el = $('log');
+  const ts = new Date().toLocaleTimeString('pt-BR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
+  el.innerHTML += `<span class="${cls}">[${ts}] ${msg}</span>\n`;
+  el.scrollTop = el.scrollHeight;
+}
+
+async function api(method, path, body = null) {
+  const opts = {
+    method,
+    headers: {
+      'apikey': apiKey(),
+      'Content-Type': 'application/json',
+    },
+  };
+  if (body) opts.body = JSON.stringify(body);
+  const url = apiUrl() + path;
+  log(`${method} ${path}`, 'info');
+  try {
+    const r = await fetch(url, opts);
+    const text = await r.text();
+    let data;
+    try { data = JSON.parse(text); } catch { data = text; }
+    if (!r.ok) {
+      const errMsg = typeof data === 'object' ? (data.message || data.error || JSON.stringify(data)) : data;
+      log(`ERRO ${r.status}: ${errMsg}`, 'err');
+      return { _error: true, status: r.status, data };
+    }
+    return data;
+  } catch (e) {
+    log(`FALHA: ${e.message}`, 'err');
+    return { _error: true, status: 0, data: e.message };
+  }
+}
+
+function statusBadge(state) {
+  const map = {
+    open: ['connected', 'Conectado'],
+    close: ['disconnected', 'Desconectado'],
+    connecting: ['disconnected', 'Conectando...'],
+  };
+  const [cls, label] = map[state] || ['unknown', state || 'Desconhecido'];
+  return `<span class="status status-${cls}"><span class="status-dot"></span>${label}</span>`;
+}
+
+// ── Step 0: Test connection ──
+async function testConnection() {
+  const r = await api('GET', '/');
+  if (r._error) return;
+  log('Evolution API acessivel!', 'ok');
+  $('conn-status').innerHTML = statusBadge('open');
+}
+
+// ── Step 1: Instance ──
+async function createInstance() {
+  const name = instName();
+  const r = await api('POST', '/instance/create', {
+    instanceName: name,
+    integration: 'WHATSAPP-BAILEYS',
+    qrcode: true,
+  });
+  if (r._error) return;
+  log(`Instancia "${name}" criada!`, 'ok');
+  $('step1-dot').classList.add('done');
+
+  await ensureHistorySync(name);
+
+  // Se veio QR code junto, mostra
+  if (r.qrcode?.base64 || r.qrcode?.pairingCode) {
+    showQr(r.qrcode);
+  }
+}
+
+async function ensureHistorySync(name) {
+  const r = await api('POST', `/settings/set/${name}`, {
+    syncFullHistory: true,
+    readMessages: false,
+    readStatus: false,
+    alwaysOnline: false,
+    groupsIgnore: false,
+    rejectCall: false,
+    msgCall: '',
+  });
+  if (r._error) {
+    log(`Nao foi possivel ativar sync de historico para "${name}"`, 'warn');
+    return false;
+  }
+  log(`Sync de historico ativado para "${name}"`, 'ok');
+  return true;
+}
+
+async function enableHistorySync() {
+  const name = await resolveInstanceName();
+  if (!name) return;
+  await ensureHistorySync(name);
+}
+
+async function listInstances() {
+  const items = await fetchInstancesSafe();
+  if (items.length === 0) {
+    $('instance-list').innerHTML = '<span style="font-size:.8rem;color:var(--text-muted)">Nenhuma instancia encontrada</span>';
+    log('Nenhuma instancia', 'warn');
+    return;
+  }
+  const html = items.map(i => {
+    return `<span style="font-size:.85rem">${i.name} ${statusBadge(i.state)}</span>`;
+  }).join('<br>');
+  $('instance-list').innerHTML = html;
+
+  const typed = instName();
+  const exists = items.some(i => i.name === typed || i.name.toLowerCase() === typed.toLowerCase());
+  if (!exists && items.length === 1) {
+    $('instance-name').value = items[0].name;
+    log(`Campo de instancia atualizado para "${items[0].name}"`, 'info');
+  }
+
+  log(`${items.length} instancia(s) encontrada(s)`, 'ok');
+}
+
+async function deleteInstance() {
+  const name = await resolveInstanceName();
+  if (!name) return;
+  if (!confirm(`Tem certeza que quer deletar a instancia "${name}"?`)) return;
+  const r = await api('DELETE', `/instance/delete/${name}`);
+  if (r._error) return;
+  log(`Instancia "${name}" deletada`, 'warn');
+}
+
+// ── Step 2: QR Code ──
+function showQr(qrData) {
+  const area = $('qr-area');
+  area.classList.remove('hidden');
+
+  if (qrData.base64) {
+    const src = qrData.base64.startsWith('data:') ? qrData.base64 : 'data:image/png;base64,' + qrData.base64;
+    area.innerHTML = `
+      <img src="${src}" alt="QR Code" width="280" height="280">
+      <p class="qr-hint">Abra o WhatsApp &gt; Dispositivos conectados &gt; Conectar dispositivo &gt; Escaneie este QR Code</p>
+    `;
+  } else if (qrData.code) {
+    area.innerHTML = `
+      <p style="font-size:1rem;font-weight:600">Codigo de pareamento:</p>
+      <p style="font-size:1.5rem;font-family:monospace;letter-spacing:.15em">${qrData.code}</p>
+    `;
+  } else {
+    area.innerHTML = `<p class="qr-hint">QR Code recebido mas formato desconhecido. Veja o log.</p>`;
+    log('QR data: ' + JSON.stringify(qrData), 'warn');
+  }
+}
+
+function openManager() {
+  const url = apiUrl() + '/manager/';
+  window.open(url, '_blank');
+  log('Manager aberto: ' + url, 'info');
+  log('Use a API key "' + apiKey() + '" para logar no manager.', 'info');
+  // Começa a monitorar se conectou via manager
+  pollConnection(120);
+}
+
+async function getQrCode() {
+  const name = await resolveInstanceName();
+  if (!name) {
+    $('qr-area').innerHTML = '<p style="color:var(--error);font-size:.85rem">Instancia nao encontrada. Clique em "Listar existentes" e confira o nome.</p>';
+    $('qr-area').classList.remove('hidden');
+    return;
+  }
+
+  $('qr-area').innerHTML = '<span class="spinner"></span><p class="qr-hint">Iniciando conexao... o QR pode levar ate 90s para aparecer</p>';
+  $('qr-area').classList.remove('hidden');
+  $('conn-state').innerHTML = statusBadge('connecting');
+
+  // O Baileys pode levar algum tempo ate gerar o QR.
+  let qrFound = false;
+  for (let attempt = 0; attempt < 30; attempt++) {
+    const r = await api('GET', `/instance/connect/${name}`);
+    if (r._error) {
+      $('qr-area').innerHTML = '<p style="color:var(--error);font-size:.85rem">Falha ao gerar QR Code. Verifique se a instancia existe.</p>';
+      return;
+    }
+
+    // Checar se ja esta conectado
+    if (r.instance?.state === 'open') {
+      $('qr-area').classList.add('hidden');
+      $('conn-state').innerHTML = statusBadge('open');
+      log('Ja esta conectado!', 'ok');
+      $('step2-dot').classList.add('done');
+      return;
+    }
+
+    // Checar se veio QR
+    const qr = r.qrcode || r;
+    if (qr.base64 || r.base64 || qr.code || r.code || r.pairingCode) {
+      showQr(qr);
+      log('QR Code gerado! Escaneie com o celular.', 'ok');
+      $('step2-dot').classList.add('done');
+      pollConnection(150);
+      qrFound = true;
+      break;
+    }
+
+    // Em alguns cenarios o endpoint retorna apenas {count: 0} por bastante tempo.
+    if ((attempt + 1) % 5 === 0) {
+      log(`Instancia ainda em conexao (count: ${r.count ?? 0}). Tentativa ${attempt + 1}/30`, 'warn');
+    }
+    await new Promise(ok => setTimeout(ok, 3000));
+  }
+
+  if (!qrFound) {
+    $('qr-area').innerHTML = `
+      <p style="color:var(--warn);font-size:.85rem">
+        QR Code nao foi gerado via API apos 90s.<br>
+        Tente <b>"Reiniciar conexao"</b> e depois <b>"Gerar QR Code"</b> novamente.<br>
+        Se preferir, use <b>"Abrir Manager"</b> para conectar pela UI oficial da Evolution API.
+      </p>
+    `;
+    log('QR nao gerado via API. Reinicie a conexao e tente novamente, ou use o Manager.', 'warn');
+  }
+}
+
+async function restartConnection() {
+  const name = await resolveInstanceName();
+  if (!name) return;
+
+  const r = await api('POST', `/instance/restart/${name}`);
+  if (r._error) return;
+
+  $('conn-state').innerHTML = statusBadge('connecting');
+  $('qr-area').classList.remove('hidden');
+  $('qr-area').innerHTML = '<span class="spinner"></span><p class="qr-hint">Conexao reiniciada. Aguarde alguns segundos e clique em "Gerar QR Code".</p>';
+  log(`Conexao da instancia "${name}" reiniciada`, 'ok');
+}
+
+let pollTimer = null;
+function pollConnection(seconds) {
+  let remaining = seconds;
+  if (pollTimer) clearInterval(pollTimer);
+  pollTimer = setInterval(async () => {
+    remaining -= 3;
+    if (remaining <= 0) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      return;
+    }
+    const r = await api('GET', `/instance/connectionState/${instName()}`);
+    if (r._error) return;
+    const state = r.instance?.state || r.state || '';
+    if (state === 'open') {
+      clearInterval(pollTimer);
+      pollTimer = null;
+      $('conn-state').innerHTML = statusBadge('open');
+      $('qr-area').classList.add('hidden');
+      $('step2-dot').classList.add('done');
+      log('WhatsApp CONECTADO com sucesso!', 'ok');
+    }
+  }, 3000);
+}
+
+async function checkStatus() {
+  const name = await resolveInstanceName();
+  if (!name) return;
+  const r = await api('GET', `/instance/connectionState/${name}`);
+  if (r._error) {
+    $('conn-state').innerHTML = statusBadge('close');
+    return;
+  }
+  const state = r.instance?.state || r.state || 'unknown';
+  $('conn-state').innerHTML = statusBadge(state);
+  log(`Status: ${state}`, state === 'open' ? 'ok' : 'warn');
+  if (state === 'open') {
+    $('step2-dot').classList.add('done');
+    await ensureHistorySync(name);
+  }
+}
+
+async function logout() {
+  const name = await resolveInstanceName();
+  if (!name) return;
+  if (!confirm('Desconectar o WhatsApp?')) return;
+  await api('DELETE', `/instance/logout/${name}`);
+  $('conn-state').innerHTML = statusBadge('close');
+  log('WhatsApp desconectado', 'warn');
+}
+
+// ── Step 3: Webhook ──
+async function setWebhook() {
+  const name = await resolveInstanceName();
+  if (!name) return;
+  const url = $('webhook-url').value.trim();
+  if (!url) { log('URL do webhook vazia!', 'err'); return; }
+
+  const r = await api('POST', `/webhook/set/${name}`, {
+    url,
+    webhook_by_events: true,
+    webhook_base64: false,
+    events: [
+      'MESSAGES_UPSERT',
+    ],
+  });
+  if (r._error) return;
+  log('Webhook configurado!', 'ok');
+  $('step3-dot').classList.add('done');
+  $('webhook-info').innerHTML = `<span style="color:var(--success)">Webhook: ${url}</span>`;
+}
+
+async function getWebhook() {
+  const name = await resolveInstanceName();
+  if (!name) return;
+  const r = await api('GET', `/webhook/find/${name}`);
+  if (r._error) return;
+
+  const wh = Array.isArray(r) ? r[0] : r;
+  const url = wh?.url || wh?.webhook?.url || '(nenhum)';
+  const events = wh?.events || wh?.webhook?.events || [];
+  $('webhook-info').innerHTML = `
+    <span style="color:var(--text-muted)">URL: ${url}</span><br>
+    <span style="color:var(--text-muted)">Eventos: ${Array.isArray(events) ? events.join(', ') : events}</span>
+  `;
+  log('Webhook atual: ' + url, 'ok');
+  if (url && url !== '(nenhum)') $('step3-dot').classList.add('done');
+}
+
+// ── Step 4: Test ──
+async function sendTest() {
+  const name = await resolveInstanceName();
+  if (!name) return;
+  const phone = $('test-phone').value.trim();
+  const msg = $('test-msg').value.trim();
+  if (!phone) { log('Preencha o numero!', 'err'); return; }
+  if (!msg) { log('Preencha a mensagem!', 'err'); return; }
+
+  const r = await api('POST', `/message/sendText/${name}`, {
+    number: phone,
+    text: msg,
+  });
+  if (r._error) return;
+  log(`Mensagem enviada para ${phone}!`, 'ok');
+  $('step4-dot').classList.add('done');
+}
+
+// ── Init ──
+log('Setup pronto. Clique em "Testar conexao" para comecar.', 'info');
+</script>
+</body>
+</html>

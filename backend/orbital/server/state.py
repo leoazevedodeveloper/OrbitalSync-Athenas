@@ -5,3 +5,6 @@ audio_loop = None
 loop_task = None
 audio_control_lock = asyncio.Lock()
 authenticator = None
+
+# Evolution API subprocess (WhatsApp)
+evolution_proc = None

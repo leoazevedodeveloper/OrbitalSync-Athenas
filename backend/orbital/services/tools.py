@@ -81,7 +81,7 @@ trigger_webhook_tool = {
     "name": "trigger_webhook",
     "description": (
         "Calls a configured HTTP webhook by id (see config/webhooks.json), e.g. n8n automations "
-        "for Spotify, ClickUp, Google Calendar. Optional payload merges into JSON body. "
+        "for Spotify, ClickUp, Google Calendar, WhatsApp. Optional payload merges into JSON body. "
         "Spotify hook `athena-spotify`: payload.action may be pause, play, resume, next, previous, volume, "
         "list_playlists ( Lista playlists do usuário no Spotify; resposta JSON com playlists ), "
         "switch_playlist / play_playlist + playlist_uri, "
@@ -89,7 +89,10 @@ trigger_webhook_tool = {
         "Perguntas tipo 'quais playlists' → list_playlists. "
         "Google Calendar hook `athena-google-calendar`: use calendar_op `create` (default; title, starts_at_iso, …), "
         "`update` (event_id + fields to change: title, starts_at_iso, ends_at_iso, notes), "
-        "`delete` (event_id), or `list` (optional time_min/time_max ISO; default próximos 7 dias)."
+        "`delete` (event_id), or `list` (optional time_min/time_max ISO; default próximos 7 dias). "
+        "WhatsApp hook `athena-whatsapp`: envia mensagem via Evolution API. "
+        "Payload: phone (número com DDI, ex '5511999999999'), text (conteúdo da mensagem). "
+        "Mensagens recebidas são processadas automaticamente pelo fluxo n8n (não precisa chamar este hook para responder)."
     ),
     "parameters": {
         "type": "OBJECT",

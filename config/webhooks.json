@@ -15,6 +15,12 @@
       "description": "n8n: Google Calendar CRUD (calendar_op: create, update, delete, list)",
       "url": "https://n8n.orbitalsync.site/webhook/athena-google-calendar",
       "body": {}
+    },
+    {
+      "id": "athena-whatsapp",
+      "description": "n8n: enviar mensagem WhatsApp via Evolution API (phone + text)",
+      "url": "https://n8n.orbitalsync.site/webhook/athena-whatsapp",
+      "body": {}
     }
   ]
 }

@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s -X POST http://localhost:8085/instance/create -H 'apikey: e49c9e30-b6b2-48f4-9781-b4e7093747a5' -H 'Content-Type: application/json' -d '{:*)",
+      "Bash(docker compose:*)"
+    ]
+  }
+}

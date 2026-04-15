@@ -37,7 +37,17 @@ import {
     Eye,
     EyeOff,
     ChevronDown,
+    Smartphone,
+    Star,
+    Trash2,
+    Plus,
+    MessageCircle,
+    QrCode,
+    LogOut,
+    Wifi,
+    WifiOff,
 } from 'lucide-react';
+import { BACKEND_ORIGIN } from '../../constants/appConfig';
 
 const TOOLS = [
     { id: 'create_directory', label: 'Criar pasta' },
@@ -1118,6 +1128,467 @@ function BrainAthenasSection({
 /**
  * Integrações opcionais: ComfyUI, n8n/webhooks.
  */
+// ─────────────────────────────────────────────────────────────
+// WhatsApp Section
+// ─────────────────────────────────────────────────────────────
+
+const EVOLUTION_BASE = 'http://localhost:8085';
+const EVOLUTION_KEY = 'e49c9e30-b6b2-48f4-9781-b4e7093747a5';
+
+function WhatsAppSection({ embedded = false }) {
+    // Instances
+    const [instances, setInstances] = useState([]);
+    const [loadingInstances, setLoadingInstances] = useState(true);
+    const [evolutionOk, setEvolutionOk] = useState(null);
+    const [qrData, setQrData] = useState(null); // { instanceName, base64 }
+    const [qrLoading, setQrLoading] = useState(null);
+    const [newInstanceName, setNewInstanceName] = useState('');
+    const [creatingInstance, setCreatingInstance] = useState(false);
+    const [showNewInstance, setShowNewInstance] = useState(false);
+    // Pending
+    const [pending, setPending] = useState([]);
+    const [loadingPending, setLoadingPending] = useState(true);
+    const [clearing, setClearing] = useState(false);
+    const [clearFeedback, setClearFeedback] = useState(null);
+    // VIP
+    const [vipContacts, setVipContacts] = useState([]);
+    const [newVip, setNewVip] = useState({ name: '', phone: '', relation: '' });
+    const [addingVip, setAddingVip] = useState(false);
+    const [showAddVip, setShowAddVip] = useState(false);
+
+    // ── Evolution API helpers ──────────────────────────────────────────────
+    const evoFetch = useCallback(async (path, opts = {}) => {
+        try {
+            const res = await fetch(`${EVOLUTION_BASE}${path}`, {
+                ...opts,
+                headers: { apikey: EVOLUTION_KEY, 'Content-Type': 'application/json', ...(opts.headers || {}) },
+                signal: AbortSignal.timeout(8000),
+            });
+            return res.ok ? res.json() : null;
+        } catch {
+            return null;
+        }
+    }, []);
+
+    const loadInstances = useCallback(async () => {
+        setLoadingInstances(true);
+        const data = await evoFetch('/instance/fetchInstances');
+        if (Array.isArray(data)) {
+            setInstances(data);
+            setEvolutionOk(true);
+        } else {
+            setEvolutionOk(false);
+            setInstances([]);
+        }
+        setLoadingInstances(false);
+    }, [evoFetch]);
+
+    const connectInstance = async (instanceName) => {
+        setQrLoading(instanceName);
+        setQrData(null);
+        const data = await evoFetch(`/instance/connect/${instanceName}`);
+        if (data?.base64) {
+            setQrData({ instanceName, base64: data.base64 });
+        } else if (data?.code) {
+            // fallback: pairing code
+            setQrData({ instanceName, base64: null, pairingCode: data.code });
+        }
+        setQrLoading(null);
+    };
+
+    const disconnectInstance = async (instanceName) => {
+        await evoFetch(`/instance/logout/${instanceName}`, { method: 'DELETE' });
+        await loadInstances();
+    };
+
+    const createInstance = async () => {
+        if (!newInstanceName.trim()) return;
+        setCreatingInstance(true);
+        await evoFetch('/instance/create', {
+            method: 'POST',
+            body: JSON.stringify({ instanceName: newInstanceName.trim(), integration: 'WHATSAPP-BAILEYS' }),
+        });
+        setNewInstanceName('');
+        setShowNewInstance(false);
+        setCreatingInstance(false);
+        await loadInstances();
+    };
+
+    // Poll connection state while QR modal is open
+    useEffect(() => {
+        if (!qrData) return;
+        const interval = setInterval(async () => {
+            const state = await evoFetch(`/instance/connectionState/${qrData.instanceName}`);
+            if (state?.instance?.state === 'open') {
+                setQrData(null);
+                loadInstances();
+            }
+        }, 3000);
+        return () => clearInterval(interval);
+    }, [qrData, evoFetch, loadInstances]);
+
+    // ── Brain helpers ──────────────────────────────────────────────────────
+    const brainFetch = useCallback(async (action, body) => {
+        try {
+            const res = await fetch(`${BACKEND_ORIGIN}/api/brain/${action}`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(body),
+            });
+            return res.ok ? res.json() : null;
+        } catch {
+            return null;
+        }
+    }, []);
+
+    const loadPending = useCallback(async () => {
+        setLoadingPending(true);
+        const data = await brainFetch('read', { note: '06 - State/WhatsApp_pendente' });
+        if (data?.content) {
+            const lines = data.content.split('\n').filter(l => l.startsWith('- '));
+            setPending(lines.map(l => l.replace(/^- /, '')));
+        } else {
+            setPending([]);
+        }
+        setLoadingPending(false);
+    }, [brainFetch]);
+
+    const loadVip = useCallback(async () => {
+        const data = await brainFetch('read', { note: '05 - Integrations/WhatsApp' });
+        if (!data?.content) return;
+        const rows = data.content.split('\n').filter(l => l.startsWith('|') && !l.includes('---') && !l.toLowerCase().includes('nome'));
+        setVipContacts(rows.map(row => {
+            const cols = row.split('|').map(c => c.trim()).filter(Boolean);
+            return { name: cols[0] || '', phone: cols[1] || '', relation: cols[2] || '' };
+        }).filter(c => c.name && c.phone));
+    }, [brainFetch]);
+
+    useEffect(() => {
+        loadInstances();
+        loadPending();
+        loadVip();
+    }, [loadInstances, loadPending, loadVip]);
+
+    const clearPending = async () => {
+        setClearing(true);
+        const header = `# WhatsApp — Mensagens Pendentes\n\n**Instruções para ATHENAS:**\n- Ao receber notificação de WhatsApp: use \`read_brain\` nesta nota e conte quantas mensagens pendentes já existem daquele remetente. Se houver mais de uma, diga "Leo, você tem X mensagens de [Nome], quer que eu te mostre?" — não leia todas de uma vez. Se for a primeira do remetente, diga "Leo, chegou mensagem de [Nome]: '[texto]'. Quer responder?"\n- Se Leo disser "agora não" / "depois" / "ignora": use \`write_brain\` (note: \`06 - State/WhatsApp_pendente\`, mode: \`append\`) para registrar a mensagem pendente na seção abaixo\n- Ao responder um contato: use \`read_brain\` para ler esta nota, remova **apenas as linhas daquele contato**, e reescreva o restante com \`write_brain\` (mode: \`overwrite\`) — nunca apague linhas de outros contatos\n- Se for um remetente diferente de msgs anteriores recentes: alerte Leo como notificação separada e prioritária\n- Se Leo disser "apaga", "pode apagar", "já respondi", "limpa as pendentes" ou similar: use \`write_brain\` (note: \`06 - State/WhatsApp_pendente\`, mode: \`overwrite\`) reescrevendo o arquivo inteiro — mantenha apenas o cabeçalho \`# WhatsApp — Mensagens Pendentes\`, as instruções e a linha \`## Mensagens não respondidas\` vazia, sem nenhuma entrada\n\n## Mensagens não respondidas\n`;
+        await brainFetch('write', { note: '06 - State/WhatsApp_pendente', content: header, mode: 'overwrite' });
+        setPending([]);
+        setClearing(false);
+        setClearFeedback('Pendentes limpas.');
+        setTimeout(() => setClearFeedback(null), 3000);
+    };
+
+    const addVipContact = async () => {
+        if (!newVip.name.trim() || !newVip.phone.trim()) return;
+        setAddingVip(true);
+        const line = `| ${newVip.name} | +${newVip.phone.replace(/^\+/, '')} | ${newVip.relation || '—'} | Tom prioritário. |\n`;
+        await brainFetch('write', { note: '05 - Integrations/WhatsApp', content: line, mode: 'append' });
+        setNewVip({ name: '', phone: '', relation: '' });
+        setShowAddVip(false);
+        setAddingVip(false);
+        await loadVip();
+    };
+
+    // ── Helpers ────────────────────────────────────────────────────────────
+    const stateColor = (s) => ({
+        open:       'border-green-500/30 bg-green-950/20 text-green-300',
+        connecting: 'border-yellow-500/30 bg-yellow-950/20 text-yellow-300',
+        close:      'border-zinc-600/30 bg-zinc-900/40 text-zinc-500',
+    }[s] ?? 'border-zinc-600/30 bg-zinc-900/40 text-zinc-500');
+
+    const stateLabel = (s) => ({ open: 'Conectado', connecting: 'Conectando…', close: 'Desconectado' }[s] ?? s);
+
+    const instanceState = (inst) =>
+        inst.connectionStatus ?? inst.instance?.state ?? inst.state ?? 'close';
+
+    const inner = (
+        <>
+            {/* QR Code modal */}
+            {qrData && createPortal(
+                <div
+                    className="fixed inset-0 z-[400] flex items-center justify-center bg-black/75 backdrop-blur-sm"
+                    onClick={() => setQrData(null)}
+                >
+                    <div
+                        className="relative mx-4 w-full max-w-xs rounded-2xl border border-white/10 bg-zinc-900 p-6 shadow-2xl"
+                        onClick={e => e.stopPropagation()}
+                    >
+                        <button
+                            onClick={() => setQrData(null)}
+                            className="absolute right-3 top-3 rounded-lg p-1.5 text-zinc-400 transition-colors hover:bg-white/10 hover:text-white"
+                        >
+                            <X size={16} />
+                        </button>
+                        <h4 className="mb-1 text-sm font-bold text-zinc-100">Escanear QR Code</h4>
+                        <p className="mb-4 text-[11px] text-zinc-400">
+                            Instância: <span className="font-mono text-zinc-200">{qrData.instanceName}</span>
+                        </p>
+                        {qrData.base64 ? (
+                            <div className="flex justify-center rounded-xl bg-white p-3">
+                                <img src={qrData.base64} alt="QR Code WhatsApp" className="h-52 w-52 object-contain" />
+                            </div>
+                        ) : qrData.pairingCode ? (
+                            <div className="flex justify-center rounded-xl border border-white/10 bg-black/40 p-4">
+                                <span className="font-mono text-2xl font-bold tracking-widest text-green-300">{qrData.pairingCode}</span>
+                            </div>
+                        ) : (
+                            <div className="flex h-52 items-center justify-center">
+                                <Loader2 className="h-8 w-8 animate-spin text-zinc-500" />
+                            </div>
+                        )}
+                        <p className="mt-3 text-center text-[10px] text-zinc-500">
+                            Abra o WhatsApp → Dispositivos conectados → Conectar dispositivo
+                        </p>
+                        <p className="mt-1 text-center text-[9px] text-zinc-600">
+                            Aguardando conexão… fecha ao conectar automaticamente
+                        </p>
+                    </div>
+                </div>,
+                document.body
+            )}
+
+            <div className="overflow-hidden rounded-2xl border border-white/[0.09] bg-gradient-to-br from-green-950/[0.16] via-zinc-950/50 to-black/80 shadow-[0_16px_48px_rgba(0,0,0,0.35)]">
+                {/* Header */}
+                <div className="border-b border-white/[0.06] bg-black/25 px-4 py-4 sm:px-6 sm:py-5">
+                    <div className="flex flex-wrap items-center gap-3">
+                        <h3 className={`${sectionTitleClass} mb-0`}>
+                            <Smartphone className="h-3.5 w-3.5" strokeWidth={2} />
+                            WhatsApp
+                        </h3>
+                        <span className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] ${evolutionOk === true ? 'border-green-500/25 bg-black/40 text-green-200/85' : evolutionOk === false ? 'border-rose-500/25 bg-black/40 text-rose-200/85' : 'border-zinc-500/25 bg-black/40 text-zinc-400'}`}>
+                            {evolutionOk === true ? <Wifi className="h-2.5 w-2.5" /> : evolutionOk === false ? <WifiOff className="h-2.5 w-2.5" /> : <Loader2 className="h-2.5 w-2.5 animate-spin" />}
+                            {evolutionOk === null ? 'verificando…' : evolutionOk ? 'Evolution API online' : 'Evolution API offline'}
+                        </span>
+                        <span className="text-[10px] text-zinc-500">
+                            <span className="font-mono text-zinc-400">:8085</span>
+                        </span>
+                        <button
+                            onClick={loadInstances}
+                            disabled={loadingInstances}
+                            className="ml-auto inline-flex items-center gap-1.5 rounded-lg border border-white/10 bg-white/[0.05] px-2.5 py-1 text-[10px] text-zinc-300 transition-colors hover:bg-white/10 disabled:opacity-50"
+                        >
+                            <RefreshCw className={`h-3 w-3 ${loadingInstances ? 'animate-spin' : ''}`} />
+                            Atualizar
+                        </button>
+                    </div>
+                </div>
+
+                {/* Instances panel */}
+                <div className="border-b border-white/[0.05] px-4 py-4 sm:px-6 sm:py-5">
+                    <div className="mb-3 flex items-center justify-between gap-2">
+                        <h4 className={subsectionTitleClass}>
+                            <Smartphone className="h-3.5 w-3.5" strokeWidth={2} />
+                            Instâncias
+                        </h4>
+                        <button
+                            onClick={() => setShowNewInstance(v => !v)}
+                            className="inline-flex items-center gap-1.5 rounded-lg border border-green-500/30 bg-green-950/20 px-2.5 py-1 text-[10px] font-bold text-green-200 transition-colors hover:bg-green-500/20"
+                        >
+                            <Plus className="h-3 w-3" />
+                            Nova instância
+                        </button>
+                    </div>
+
+                    {showNewInstance && (
+                        <div className="mb-4 flex gap-2">
+                            <input
+                                className="flex-1 rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-[11px] text-zinc-100 placeholder-zinc-600 outline-none focus:border-green-500/40"
+                                placeholder="Nome da instância (ex: Athenas-WPP)"
+                                value={newInstanceName}
+                                onChange={e => setNewInstanceName(e.target.value)}
+                                onKeyDown={e => e.key === 'Enter' && createInstance()}
+                            />
+                            <button
+                                onClick={createInstance}
+                                disabled={creatingInstance || !newInstanceName.trim()}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-green-500/30 bg-green-500/15 px-3 py-1.5 text-[10px] font-bold text-green-100 disabled:opacity-50"
+                            >
+                                {creatingInstance ? <Loader2 className="h-3 w-3 animate-spin" /> : <Plus className="h-3 w-3" />}
+                                Criar
+                            </button>
+                        </div>
+                    )}
+
+                    {loadingInstances ? (
+                        <div className="flex items-center gap-2 text-[11px] text-zinc-500">
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" /> Carregando instâncias…
+                        </div>
+                    ) : instances.length === 0 ? (
+                        <p className="text-[11px] text-zinc-500">
+                            {evolutionOk === false ? 'Evolution API offline — verifique se está rodando em :8085.' : 'Nenhuma instância encontrada.'}
+                        </p>
+                    ) : (
+                        <div className="space-y-2">
+                            {instances.map((inst) => {
+                                const name = inst.name ?? inst.instanceName ?? '?';
+                                const state = instanceState(inst);
+                                const isConnected = state === 'open';
+                                const loadingQr = qrLoading === name;
+                                return (
+                                    <div key={name} className="flex flex-wrap items-center gap-3 rounded-xl border border-white/[0.07] bg-black/25 px-3 py-2.5">
+                                        <div className="flex min-w-0 flex-1 items-center gap-2.5">
+                                            <span className="truncate font-mono text-[11px] font-semibold text-zinc-100">{name}</span>
+                                            <span className={`inline-flex shrink-0 items-center rounded-full border px-2 py-0.5 text-[9px] font-bold uppercase tracking-wider ${stateColor(state)}`}>
+                                                {stateLabel(state)}
+                                            </span>
+                                        </div>
+                                        <div className="flex shrink-0 items-center gap-1.5">
+                                            {!isConnected && (
+                                                <button
+                                                    onClick={() => connectInstance(name)}
+                                                    disabled={loadingQr}
+                                                    className="inline-flex items-center gap-1.5 rounded-lg border border-green-500/30 bg-green-950/20 px-2.5 py-1 text-[10px] font-bold text-green-200 transition-colors hover:bg-green-500/20 disabled:opacity-50"
+                                                >
+                                                    {loadingQr ? <Loader2 className="h-3 w-3 animate-spin" /> : <QrCode className="h-3 w-3" />}
+                                                    Conectar
+                                                </button>
+                                            )}
+                                            {isConnected && (
+                                                <button
+                                                    onClick={() => disconnectInstance(name)}
+                                                    className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-950/20 px-2.5 py-1 text-[10px] font-bold text-rose-200 transition-colors hover:bg-rose-500/20"
+                                                >
+                                                    <LogOut className="h-3 w-3" />
+                                                    Desconectar
+                                                </button>
+                                            )}
+                                        </div>
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
+                </div>
+
+                {/* Pending + VIP */}
+                <div className="grid grid-cols-1 gap-0 divide-y divide-white/[0.05] sm:grid-cols-2 sm:divide-x sm:divide-y-0">
+                    {/* Mensagens pendentes */}
+                    <div className="px-4 py-4 sm:px-6 sm:py-5">
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                            <h4 className={subsectionTitleClass}>
+                                <MessageCircle className="h-3.5 w-3.5" strokeWidth={2} />
+                                Mensagens pendentes
+                                {pending.length > 0 && (
+                                    <span className="ml-1 rounded-full bg-green-500/20 px-2 py-0.5 text-[9px] font-bold text-green-300">
+                                        {pending.length}
+                                    </span>
+                                )}
+                            </h4>
+                            <div className="flex items-center gap-1.5">
+                                <button onClick={loadPending} className="rounded-lg p-1 text-zinc-500 transition-colors hover:text-zinc-300">
+                                    <RefreshCw className={`h-3 w-3 ${loadingPending ? 'animate-spin' : ''}`} />
+                                </button>
+                                {pending.length > 0 && (
+                                    <button
+                                        onClick={clearPending}
+                                        disabled={clearing}
+                                        className="inline-flex items-center gap-1.5 rounded-lg border border-rose-500/30 bg-rose-950/20 px-2.5 py-1 text-[10px] font-bold text-rose-200 transition-colors hover:bg-rose-500/20 disabled:opacity-50"
+                                    >
+                                        {clearing ? <Loader2 className="h-3 w-3 animate-spin" /> : <Trash2 className="h-3 w-3" />}
+                                        Limpar
+                                    </button>
+                                )}
+                            </div>
+                        </div>
+                        {clearFeedback && <p className="mb-2 text-[10px] text-green-400">{clearFeedback}</p>}
+                        {loadingPending ? (
+                            <p className="text-[11px] text-zinc-500">A carregar…</p>
+                        ) : pending.length === 0 ? (
+                            <p className="text-[11px] text-zinc-500">Nenhuma mensagem pendente.</p>
+                        ) : (
+                            <ul className="max-h-48 space-y-1.5 overflow-y-auto pr-1">
+                                {pending.map((msg, i) => {
+                                    const match = msg.match(/^(.+?)\s*\|\s*(.+?)\s*\(([^)]+)\):\s*(.+)$/);
+                                    const time = match?.[1] ?? '';
+                                    const name = match?.[2] ?? '';
+                                    const text = match?.[4] ?? msg;
+                                    return (
+                                        <li key={i} className="rounded-lg border border-white/[0.06] bg-black/30 px-2.5 py-2">
+                                            <div className="flex items-center gap-1.5">
+                                                <span className="font-mono text-[9px] text-zinc-500">{time}</span>
+                                                <span className="text-[10px] font-semibold text-zinc-200">{name}</span>
+                                            </div>
+                                            <p className="mt-0.5 text-[10px] leading-snug text-zinc-400">{text}</p>
+                                        </li>
+                                    );
+                                })}
+                            </ul>
+                        )}
+                    </div>
+
+                    {/* Contatos VIP */}
+                    <div className="px-4 py-4 sm:px-6 sm:py-5">
+                        <div className="mb-3 flex items-center justify-between gap-2">
+                            <h4 className={subsectionTitleClass}>
+                                <Star className="h-3.5 w-3.5" strokeWidth={2} />
+                                Contatos VIP
+                            </h4>
+                            <button
+                                onClick={() => setShowAddVip(v => !v)}
+                                className="inline-flex items-center gap-1.5 rounded-lg border border-green-500/30 bg-green-950/20 px-2.5 py-1 text-[10px] font-bold text-green-200 transition-colors hover:bg-green-500/20"
+                            >
+                                <Plus className="h-3 w-3" />
+                                Adicionar
+                            </button>
+                        </div>
+
+                        {vipContacts.length === 0 ? (
+                            <p className="text-[11px] text-zinc-500">Nenhum contato VIP configurado.</p>
+                        ) : (
+                            <ul className="space-y-1.5">
+                                {vipContacts.map((c, i) => (
+                                    <li key={i} className="rounded-lg border border-white/[0.06] bg-black/30 px-2.5 py-2">
+                                        <span className="text-[10px] font-semibold text-zinc-100">{c.name}</span>
+                                        {c.relation && <span className="ml-2 text-[9px] text-green-300/80">{c.relation}</span>}
+                                        <p className="font-mono text-[9px] text-zinc-500">{c.phone}</p>
+                                    </li>
+                                ))}
+                            </ul>
+                        )}
+
+                        {showAddVip && (
+                            <div className="mt-3 space-y-2 rounded-xl border border-white/[0.08] bg-black/30 p-3">
+                                <p className="text-[10px] font-bold uppercase tracking-wider text-zinc-400">Novo contato VIP</p>
+                                <input
+                                    className="w-full rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-[11px] text-zinc-100 placeholder-zinc-600 outline-none focus:border-green-500/40"
+                                    placeholder="Nome"
+                                    value={newVip.name}
+                                    onChange={e => setNewVip(v => ({ ...v, name: e.target.value }))}
+                                />
+                                <input
+                                    className="w-full rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-[11px] text-zinc-100 placeholder-zinc-600 outline-none focus:border-green-500/40"
+                                    placeholder="Número (ex: 5511999999999)"
+                                    value={newVip.phone}
+                                    onChange={e => setNewVip(v => ({ ...v, phone: e.target.value }))}
+                                />
+                                <input
+                                    className="w-full rounded-lg border border-white/10 bg-black/40 px-2.5 py-1.5 text-[11px] text-zinc-100 placeholder-zinc-600 outline-none focus:border-green-500/40"
+                                    placeholder="Relação (ex: Namorada, Chefe…)"
+                                    value={newVip.relation}
+                                    onChange={e => setNewVip(v => ({ ...v, relation: e.target.value }))}
+                                />
+                                <button
+                                    onClick={addVipContact}
+                                    disabled={addingVip || !newVip.name.trim() || !newVip.phone.trim()}
+                                    className="inline-flex w-full items-center justify-center gap-1.5 rounded-lg border border-green-500/30 bg-green-500/15 px-3 py-1.5 text-[10px] font-bold text-green-100 transition-colors hover:bg-green-500/25 disabled:opacity-50"
+                                >
+                                    {addingVip ? <Loader2 className="h-3 w-3 animate-spin" /> : <Save className="h-3 w-3" />}
+                                    Salvar
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </>
+    );
+
+    if (embedded) return inner;
+
+    return <section className="mb-6 sm:mb-8">{inner}</section>;
+}
+
 function IntegrationsHubSection({
     integrations,
     integrationsReady,
@@ -1405,6 +1876,7 @@ function IntegrationsHubSection({
                         </>
                     )}
                 </div>
+                <WhatsAppSection embedded />
             </div>
         </section>
     );

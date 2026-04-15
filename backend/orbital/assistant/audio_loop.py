@@ -204,6 +204,7 @@ class AudioLoop:
         for section, _label in [
             ("06 - State", "CURRENT STATE"),
             ("01 - Memoria", "MEMORY"),
+            ("05 - Integrations", "INTEGRATIONS"),
         ]:
             for md in sorted((self.brain.vault / section).glob("*.md")):
                 try:

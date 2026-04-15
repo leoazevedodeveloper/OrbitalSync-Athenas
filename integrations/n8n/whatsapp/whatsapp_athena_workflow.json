@@ -1,0 +1,633 @@
+{
+  "name": "ATHENA WhatsApp (Evolution API)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "evolution-whatsapp-in",
+        "responseMode": "onReceived",
+        "options": {}
+      },
+      "id": "wh-in",
+      "name": "Webhook Incoming",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        300
+      ],
+      "webhookId": "evolution-whatsapp-in"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "athena-whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "wh-out",
+      "name": "Webhook Send",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        700
+      ],
+      "webhookId": "athena-whatsapp"
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// â”€â”€ Parse Evolution API incoming message â”€â”€\nconst root = $input.first().json || {};\nconst body = root.body && typeof root.body === 'object' ? root.body : root;\n\n// Evolution API v2 format\nconst data = body.data || body;\nconst event = body.event || '';\n\n// SÃ³ processa messages.upsert\nif (event && event !== 'messages.upsert') {\n  return [{ json: { skip: true, reason: 'not a message event: ' + event } }];\n}\n\nconst key = data.key || {};\nif (key.fromMe === true) {\n  return [{ json: { skip: true, reason: 'own message (fromMe)' } }];\n}\n\nconst remoteJid = key.remoteJid || '';\nif (remoteJid.endsWith('@g.us') || remoteJid.includes('broadcast')) {\n  return [{ json: { skip: true, reason: 'group or broadcast' } }];\n}\n\nconst phone = remoteJid.replace('@s.whatsapp.net', '').replace('@c.us', '');\n\nconst msg = data.message || {};\nconst text = msg.conversation\n  || (msg.extendedTextMessage && msg.extendedTextMessage.text)\n  || (msg.imageMessage && msg.imageMessage.caption)\n  || (msg.videoMessage && msg.videoMessage.caption)\n  || '';\n\nif (!text.trim()) {\n  return [{ json: { skip: true, reason: 'no text content' } }];\n}\n\nconst pushName = data.pushName || phone;\nconst ts = Number(data.messageTimestamp || 0);\nconst dateObj = ts ? new Date(ts * 1000) : new Date();\nconst tz = 'America/Sao_Paulo';\nconst dateParts = dateObj.toLocaleDateString('pt-BR', { timeZone: tz }).split('/');\nconst dateStr = `${dateParts[2]}-${dateParts[1].padStart(2,'0')}-${dateParts[0].padStart(2,'0')}`;\nconst timeStr = dateObj.toLocaleTimeString('pt-BR', { timeZone: tz, hour: '2-digit', minute: '2-digit', hour12: false });\nconst instanceName = body.instance || '';\n\nreturn [{ json: {\n  skip: false,\n  phone,\n  remoteJid,\n  pushName,\n  text: text.trim(),\n  dateStr,\n  timeStr,\n  timestamp: ts,\n  instanceName,\n  brainNote: '07 - Logs/' + dateStr + 'WW'\n} }];\n"
+      },
+      "id": "code-parse",
+      "name": "Parse Message",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": ""
+          },
+          "conditions": [
+            {
+              "id": "skip-check",
+              "leftValue": "={{ $json.skip }}",
+              "rightValue": false,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-valid",
+      "name": "Is Valid Message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        460,
+        300
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/brain/write",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ note: $(\"Parse Message\").first().json.brainNote, content: \"\n### \" + $(\"Parse Message\").first().json.timeStr + \" — \" + $(\"Parse Message\").first().json.pushName + \" (\" + $(\"Parse Message\").first().json.phone + \")\n\" + $(\"Parse Message\").first().json.text + \"\n\", mode: \"append\" }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-save-msg",
+      "name": "Save to Brain",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1500,
+        100
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "OrbitalSync Brain API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/brain/write",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ note: '06 - State/WhatsApp_pendente', content: '- ' + $json.timeStr + ' | ' + $json.pushName + ' (+' + $json.phone + '): ' + $json.text + '\\n', mode: 'append' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-save-pending",
+      "name": "Save Pending",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        300
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "OrbitalSync Brain API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/whatsapp/notify",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ phone: $('Parse Message').first().json.phone, pushName: $('Parse Message').first().json.pushName, text: $('Parse Message').first().json.text, instanceName: $('Parse Message').first().json.instanceName }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-notify",
+      "name": "Notify Athena",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        400
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "OrbitalSync Brain API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "// â”€â”€ Outgoing: ATHENAS envia mensagem proativamente â”€â”€\nconst root = $input.first().json || {};\nconst body = root.body && typeof root.body === 'object' ? root.body : root;\n\n// Health check\nif (String(body.action || '') === '__orbital_connectivity_probe__') {\n  return [{ json: { ok: true, probe: true } }];\n}\n\nconst phone = String(body.phone || body.number || body.to || '').trim();\nconst text = String(body.text || body.message || body.content || '').trim();\nconst instance = String(body.instance || '').trim();\n\nif (!phone) throw new Error('phone/number/to Ã© obrigatÃ³rio');\nif (!text) throw new Error('text/message/content Ã© obrigatÃ³rio');\n\nreturn [{ json: { phone, text, instance } }];\n"
+      },
+      "id": "code-parse-out",
+      "name": "Parse Outgoing",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        240,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false
+          },
+          "conditions": [
+            {
+              "id": "probe-check",
+              "leftValue": "={{ $json.probe }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "notEquals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "if-not-probe",
+      "name": "Not Probe?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        460,
+        700
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "=http://host.docker.internal:8085/message/sendText/{{ $json.instance || 'Athenas-WPP' }}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "apikey",
+              "value": "e49c9e30-b6b2-48f4-9781-b4e7093747a5"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ number: $json.phone, text: $json.text }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-send-out",
+      "name": "Send Outgoing",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/brain/write",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ note: '07 - Logs/' + new Date().toISOString().slice(0,10) + 'WW', content: '\\n### ' + new Date().toLocaleTimeString('pt-BR',{hour:'2-digit',minute:'2-digit',hour12:false}) + ' â€” ATHENAS (enviado)\\nPara: ' + $('Parse Outgoing').first().json.phone + '\\n' + $('Parse Outgoing').first().json.text + '\\n', mode: 'append' }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "id": "http-save-out",
+      "name": "Save Outgoing to Brain",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        820
+      ],
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "OrbitalSync Brain API"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "const parsed = $('Parse Outgoing').first().json;\nconst waResult = $input.first().json;\nconst ok = !!(waResult && (waResult.key || waResult.messageId || waResult.status === 'PENDING'));\nreturn [{ json: {\n  ok,\n  message: ok ? 'Message sent' : 'Failed to send',\n  to: parsed.phone\n} }];\n"
+      },
+      "id": "code-out-result",
+      "name": "Outgoing Result",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        940,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify($json) }}",
+        "options": {}
+      },
+      "id": "respond-out",
+      "name": "Respond Send",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        1180,
+        620
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, probe: true }) }}",
+        "options": {}
+      },
+      "id": "respond-probe",
+      "name": "Respond Probe",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        700,
+        1000
+      ]
+    },
+    {
+      "id": "http-read-daily",
+      "name": "Read Daily Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        700,
+        80
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/brain/read",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ note: $json.brainNote }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "OrbitalSync Brain API"
+        }
+      }
+    },
+    {
+      "id": "if-new-day",
+      "name": "If New Day?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        900,
+        80
+      ],
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "loose"
+          },
+          "conditions": [
+            {
+              "id": "check-new",
+              "leftValue": "={{ $json.content ?? \"\" }}",
+              "rightValue": "",
+              "operator": {
+                "type": "string",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "http-init-daily",
+      "name": "Init Daily Log",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1100,
+        -40
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/brain/write",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ note: $(\"Parse Message\").first().json.brainNote, content: \"# WhatsApp Log — \" + $(\"Parse Message\").first().json.dateStr + \"\n[[WhatsApp_log_index]] · [[WhatsApp]] · [[WhatsApp_pendente]]\n\", mode: \"overwrite\" }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "OrbitalSync Brain API"
+        }
+      }
+    },
+    {
+      "id": "http-reg-index",
+      "name": "Register Day in Index",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        1300,
+        -40
+      ],
+      "parameters": {
+        "method": "POST",
+        "url": "http://host.docker.internal:8000/api/brain/write",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({ note: \"07 - Logs/WhatsApp_log_index\", content: \"- [[\" + $(\"Parse Message\").first().json.dateStr + \"WW]]\n\", mode: \"append\" }) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "credentials": {
+        "httpHeaderAuth": {
+          "name": "OrbitalSync Brain API"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Incoming": {
+      "main": [
+        [
+          {
+            "node": "Parse Message",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Message": {
+      "main": [
+        [
+          {
+            "node": "Is Valid Message?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Is Valid Message?": {
+      "main": [
+        [
+          {
+            "node": "Save Pending",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Notify Athena",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Read Daily Log",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        []
+      ]
+    },
+    "Save to Brain": {
+      "main": []
+    },
+    "Save Pending": {
+      "main": []
+    },
+    "Notify Athena": {
+      "main": []
+    },
+    "Webhook Send": {
+      "main": [
+        [
+          {
+            "node": "Parse Outgoing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Outgoing": {
+      "main": [
+        [
+          {
+            "node": "Not Probe?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Not Probe?": {
+      "main": [
+        [
+          {
+            "node": "Send Outgoing",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Save Outgoing to Brain",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond Probe",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Send Outgoing": {
+      "main": [
+        [
+          {
+            "node": "Outgoing Result",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Save Outgoing to Brain": {
+      "main": []
+    },
+    "Outgoing Result": {
+      "main": [
+        [
+          {
+            "node": "Respond Send",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read Daily Log": {
+      "main": [
+        [
+          {
+            "node": "If New Day?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If New Day?": {
+      "main": [
+        [
+          {
+            "node": "Init Daily Log",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Save to Brain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Init Daily Log": {
+      "main": [
+        [
+          {
+            "node": "Register Day in Index",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Register Day in Index": {
+      "main": [
+        [
+          {
+            "node": "Save to Brain",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": false,
+  "settings": {},
+  "versionId": "athena-whatsapp-evolution-v2",
+  "meta": {
+    "templateCredsSetupCompleted": false
+  }
+}

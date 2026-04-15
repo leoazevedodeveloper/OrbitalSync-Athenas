@@ -109,6 +109,18 @@ function createRotatingFileWriter(fileName, { maxBytes = 10 * 1024 * 1024, maxFi
 
 const writeOrbitalLog = createRotatingFileWriter('orbitalsync.log');
 
+// Escrita síncrona usada apenas no shutdown (will-quit), onde streams assíncronos
+// podem não ter tempo de fazer flush antes do processo terminar.
+function writeOrbitalLogSync(level, message) {
+    try {
+        const ts = new Date().toISOString();
+        const line = `${ts} [${level}] ${String(message ?? '')}\n`;
+        fs.appendFileSync(path.join(LOG_DIR, 'orbitalsync.log'), line, { encoding: 'utf8' });
+    } catch {
+        // nada a fazer no shutdown
+    }
+}
+
 /**
  * Cloudflare Tunnel (n8n, etc.): cloudflared.exe em dev/ambiente/ ou CLOUDFLARED_EXE.
  * Desligar: ORBITAL_SKIP_CLOUDFLARED=1
@@ -531,16 +543,47 @@ app.on('window-all-closed', () => {
     }
 });
 
+/**
+ * Mata o processo que estiver escutando numa porta TCP específica (Windows).
+ * Usa netstat para encontrar o PID e taskkill /f /t para encerrar a árvore.
+ */
+function killProcessOnPort(port) {
+    try {
+        const result = execSync(`netstat -ano | findstr :${port}`, { encoding: 'utf8', windowsHide: true });
+        const lines = result.split('\n').filter(l => l.includes('LISTENING'));
+        const pids = [...new Set(lines.map(l => l.trim().split(/\s+/).pop()).filter(p => p && p !== '0'))];
+        for (const pid of pids) {
+            try {
+                execSync(`taskkill /pid ${pid} /f /t`, { windowsHide: true });
+                writeOrbitalLogSync('info', `[Shutdown] Processo PID ${pid} (porta ${port}) encerrado.`);
+            } catch (e) {
+                writeOrbitalLogSync('warn', `[Shutdown] taskkill PID ${pid} (porta ${port}): ${e.message}`);
+            }
+        }
+        if (pids.length === 0) {
+            writeOrbitalLogSync('info', `[Shutdown] Nenhum processo escutando na porta ${port}.`);
+        }
+    } catch {
+        writeOrbitalLogSync('info', `[Shutdown] Porta ${port} já livre.`);
+    }
+}
+
 app.on('will-quit', () => {
-    writeOrbitalLog('info', 'App closing... Encerrando backend e Cloudflared.');
+    writeOrbitalLogSync('info', 'App closing... Encerrando backend e Cloudflared.');
     stopDockerContainersOnQuit();
+
+    // Mata Evolution API (WhatsApp) na porta 8085 antes de matar o Python
+    if (process.platform === 'win32') {
+        writeOrbitalLogSync('info', '[Shutdown] Encerrando Evolution API (porta 8085)...');
+        killProcessOnPort(8085);
+    }
 
     if (cloudflaredProcess) {
         if (process.platform === 'win32') {
             try {
                 execSync(`taskkill /pid ${cloudflaredProcess.pid} /f /t`);
             } catch (e) {
-                writeOrbitalLog('error', `Falha ao encerrar cloudflared: ${e.message}`);
+                writeOrbitalLogSync('error', `Falha ao encerrar cloudflared: ${e.message}`);
             }
         } else {
             cloudflaredProcess.kill('SIGKILL');
@@ -549,11 +592,13 @@ app.on('will-quit', () => {
     }
 
     if (pythonProcess) {
+        writeOrbitalLogSync('info', `[Shutdown] Encerrando Python (PID ${pythonProcess.pid})...`);
         if (process.platform === 'win32') {
             try {
                 execSync(`taskkill /pid ${pythonProcess.pid} /f /t`);
+                writeOrbitalLogSync('info', '[Shutdown] Python encerrado.');
             } catch (e) {
-                writeOrbitalLog('error', `Failed to kill python process: ${e.message}`);
+                writeOrbitalLogSync('error', `Failed to kill python process: ${e.message}`);
             }
         } else {
             pythonProcess.kill('SIGKILL');

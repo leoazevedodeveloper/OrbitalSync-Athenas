@@ -22,6 +22,8 @@ long_term_memory/
 projects/
 output.stl
 cad_outputs/
+integrations/evolution-api/app/node_modules
+integrations/evolution-api/app/dist
 
 # Node.js
 node_modules/
