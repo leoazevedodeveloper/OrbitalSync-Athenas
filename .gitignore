@@ -24,6 +24,7 @@ output.stl
 cad_outputs/
 integrations/evolution-api/app/node_modules
 integrations/evolution-api/app/dist
+integrations/evolution-api/app/instances
 
 # Node.js
 node_modules/

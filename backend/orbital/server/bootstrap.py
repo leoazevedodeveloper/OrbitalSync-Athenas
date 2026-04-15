@@ -136,7 +136,26 @@ async def _autostart_evolution_api():
         print(f"[EVOLUTION] Diretório não encontrado: {evo_dir} — pulando autostart.")
         return
 
-    # Se o build não existe ainda, compila primeiro
+    # Se node_modules não existe, roda npm install primeiro
+    if not (evo_dir / "node_modules").exists():
+        print("[EVOLUTION] node_modules não encontrado — executando npm install (pode demorar)...")
+        try:
+            install_proc = await asyncio.create_subprocess_exec(
+                "npm", "install", "--omit=dev",
+                cwd=str(evo_dir),
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.STDOUT,
+            )
+            stdout, _ = await install_proc.communicate()
+            if install_proc.returncode != 0:
+                print(f"[EVOLUTION] npm install falhou (código {install_proc.returncode}):\n{stdout.decode(errors='replace')[-2000:]}")
+                return
+            print("[EVOLUTION] npm install concluído.")
+        except Exception as e:
+            print(f"[EVOLUTION] Erro ao executar npm install: {e}")
+            return
+
+    # Se o build não existe ainda, compila
     if not dist_main.exists():
         print("[EVOLUTION] dist/main.js não encontrado — executando npm run build...")
         try:
