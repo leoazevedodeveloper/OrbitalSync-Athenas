@@ -15,7 +15,7 @@ import Visualizer from './features/orbital-ui/Visualizer';
 import TopAudioBar from './features/orbital-ui/TopAudioBar';
 import ChatModule from './features/chat/ChatModule';
 import ToolsModule from './features/orbital-ui/ToolsModule';
-import { Mic, MicOff, Settings, X, Minus, Maximize2, Power, Video, VideoOff, Layout, Hand, Clock } from 'lucide-react';
+import { Mic, MicOff, Settings, X, Minus, Maximize2, Power, Video, VideoOff, Layout, Hand, Clock, ZoomIn } from 'lucide-react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
 // MemoryPrompt removed - memory is now actively saved to project
 import ConfirmationPopup from './shared/ConfirmationPopup';
@@ -135,6 +135,8 @@ function App() {
     const [chatImageAttachment, setChatImageAttachment] = useState(null); // { b64, mime, preview }
     const [isImageGenerating, setIsImageGenerating] = useState(false);
     const [imageGeneratingCaption, setImageGeneratingCaption] = useState('Gerando imagem...');
+    const [lastGeneratedImage, setLastGeneratedImage] = useState(null); // { src, caption }
+    const [imageExpanded, setImageExpanded] = useState(false);
     const isImageGenerationActiveRef = useRef(false);
     const pendingAssistantTextRef = useRef('');
     // showMemoryPrompt removed - memory is now actively saved to project
@@ -209,7 +211,6 @@ function App() {
     /** Último resultado do teste automático de integrações (a cada 1 min). */
     const [integrationHealth, setIntegrationHealth] = useState({
         supabase: { tier: 'pending' },
-        comfyui: { tier: 'pending' },
         webhooks: { tier: 'pending' },
     });
     const showSettingsRef = useRef(false);
@@ -948,7 +949,7 @@ function App() {
                         const q = encodeURIComponent(rel);
                         image = {
                             mime_type: mimeType,
-                            url: `${BACKEND_ORIGIN}/api/comfyui-image?relpath=${q}`,
+                            url: `${BACKEND_ORIGIN}/api/generated-image?relpath=${q}`,
                         };
                     }
                     return { sender, text, time, ...(image ? { image } : {}) };
@@ -979,9 +980,20 @@ function App() {
                 ? {
                     mime_type: mimeType,
                     data: imageData,
-                    url: `${BACKEND_ORIGIN}/api/comfyui-image?relpath=${encodeURIComponent(rel)}`,
+                    url: `${BACKEND_ORIGIN}/api/generated-image?relpath=${encodeURIComponent(rel)}`,
                 }
                 : { mime_type: mimeType, data: imageData };
+
+            // Guarda preview para exibir no modal quando chat está oculto
+            setLastGeneratedImage({
+                src: imageData
+                    ? `data:${mimeType};base64,${imageData}`
+                    : rel
+                        ? `${BACKEND_ORIGIN}/api/generated-image?relpath=${encodeURIComponent(rel)}`
+                        : null,
+                caption,
+                downloadName: `athena_${Date.now()}.png`,
+            });
 
             // Mensagem com imagem como ATHENAS (não System): no chat, System + imagem usa
             // justify-center e a foto “flutua” no meio do ecrã; assistente fica à esquerda no fio.
@@ -1191,14 +1203,12 @@ function App() {
             if (!payload || payload.ok === false) {
                 setIntegrationHealth({
                     supabase: { tier: 'down' },
-                    comfyui: { tier: 'down' },
                     webhooks: { tier: 'down' },
                 });
             } else {
                 const r = payload.results || {};
                 setIntegrationHealth({
                     supabase: { tier: r.supabase?.tier || 'down' },
-                    comfyui: { tier: r.comfyui?.tier || 'down' },
                     webhooks: { tier: r.webhooks?.tier || 'down' },
                 });
             }
@@ -2337,36 +2347,24 @@ function App() {
                     />
                 )}
 
-                {showChatVisualization && isImageGenerationActive && (
-                    <div
-                        id="chat"
-                        className="absolute px-4 transition-all duration-300"
-                        style={{
-                            left: elementPositions.chat.x,
-                            top: elementPositions.chat.y,
-                            transform: 'translate(-50%, 0)',
-                            width: elementSizes.chat.w,
-                            height: elementSizes.chat.h || 'unset'
-                        }}
-                    >
-                        <div className="relative h-full overflow-hidden rounded-[1.5rem] border border-white/10 bg-black/45 backdrop-blur-2xl shadow-[0_20px_70px_rgba(0,0,0,0.55)]">
-                            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.06),transparent_24%)]" />
-
-                            <div className="relative z-10 h-full flex flex-col items-center justify-center gap-4 px-4">
-                                <div className="relative w-20 h-20 rounded-full bg-white/5 border border-white/10 shadow-[0_0_70px_rgba(255,255,255,0.10)] flex items-center justify-center">
-                                    <div className="absolute inset-0 rounded-full bg-[radial-gradient(circle_at_center,rgba(255,255,255,0.18),transparent_60%)] animate-pulse" />
-                                    <div className="absolute inset-0 rounded-full border border-white/20 animate-ping" />
-                                    <div className="relative w-14 h-14 rounded-full border border-white/30 border-t-white/80 animate-spin" />
-                                </div>
-
-                                <div className="text-center">
-                                    <div className="text-xs font-bold uppercase tracking-widest text-zinc-200/90">
-                                        GERANDO IMAGEM...
-                                    </div>
-                                    <div className="text-[10px] text-zinc-500 mt-2 max-w-[260px]">
-                                        {imageGeneratingCaption || 'Aguarde um instante.'}
-                                    </div>
-                                </div>
+                {isImageGenerationActive && (
+                    <div className="fixed bottom-[120px] left-1/2 -translate-x-1/2 z-[55] w-[min(600px,90vw)] pointer-events-none px-4">
+                        <div className="relative overflow-hidden rounded-[1.5rem] border border-white/10 bg-black/50 backdrop-blur-2xl shadow-[0_20px_70px_rgba(0,0,0,0.6)] flex flex-col items-center justify-center gap-4 px-4 py-8">
+                            <div className="pointer-events-none absolute inset-0 bg-[linear-gradient(to_bottom,rgba(255,255,255,0.04),transparent_30%)]" />
+                            {/* Orb */}
+                            <div className="relative z-10 w-14 h-14 flex items-center justify-center">
+                                <div className="absolute inset-0 rounded-full bg-cyan-500/10 animate-pulse" />
+                                <div className="absolute inset-0 rounded-full border border-cyan-400/20 animate-ping" style={{ animationDuration: '1.6s' }} />
+                                <div className="w-9 h-9 rounded-full border-2 border-white/10 border-t-cyan-400/80 animate-spin" />
+                            </div>
+                            {/* Texto */}
+                            <div className="relative z-10 text-center">
+                                <p className="text-[11px] font-semibold uppercase tracking-[0.18em] text-white/90">
+                                    Gerando Imagem
+                                </p>
+                                <p className="text-[10px] text-zinc-500 mt-1.5 max-w-[240px] leading-relaxed">
+                                    {imageGeneratingCaption || 'Aguarde um instante.'}
+                                </p>
                             </div>
                         </div>
                     </div>
@@ -2399,6 +2397,93 @@ function App() {
                 )}
 
                 {/* Memory Prompt removed - memory is now actively saved to project */}
+
+                {/* Modal: imagem gerada — visível quando chat está oculto */}
+                {!showChatVisualization && lastGeneratedImage?.src && (
+                    <div className="fixed inset-0 z-[60] flex items-end justify-center pb-24 pointer-events-none">
+                        <div className="pointer-events-auto flex flex-col gap-3 rounded-2xl border border-white/10 bg-black/70 p-3 shadow-[0_30px_100px_rgba(0,0,0,0.8)] backdrop-blur-2xl w-[340px]">
+                            {/* Header */}
+                            <div className="flex items-center justify-between px-1">
+                                <div className="flex items-center gap-2">
+                                    <div className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                                    <span className="text-[10px] uppercase tracking-[0.18em] text-zinc-300 font-semibold">
+                                        Imagem Pronta
+                                    </span>
+                                </div>
+                                <button
+                                    onClick={() => setLastGeneratedImage(null)}
+                                    className="text-zinc-500 hover:text-zinc-200 transition-colors p-1 rounded-lg hover:bg-white/5"
+                                    title="Fechar"
+                                >
+                                    <X size={13} />
+                                </button>
+                            </div>
+
+                            {/* Preview com botão lupa */}
+                            <div className="relative group">
+                                <img
+                                    src={lastGeneratedImage.src}
+                                    alt={lastGeneratedImage.caption}
+                                    className="w-full rounded-xl object-cover max-h-[240px] cursor-pointer"
+                                    onClick={() => setImageExpanded(true)}
+                                />
+                                <button
+                                    onClick={() => setImageExpanded(true)}
+                                    className="absolute bottom-2 right-2 flex items-center justify-center w-7 h-7 rounded-lg bg-black/60 border border-white/10 text-zinc-300 opacity-0 group-hover:opacity-100 transition-opacity hover:bg-black/80 hover:text-white backdrop-blur-sm"
+                                    title="Expandir"
+                                >
+                                    <ZoomIn size={13} />
+                                </button>
+                            </div>
+
+                            {/* Caption */}
+                            {lastGeneratedImage.caption && (
+                                <p className="text-[10px] text-zinc-400 px-1 leading-relaxed line-clamp-2">
+                                    {lastGeneratedImage.caption}
+                                </p>
+                            )}
+
+                            {/* Actions */}
+                            <div className="flex gap-2">
+                                <a
+                                    href={lastGeneratedImage.src}
+                                    download={lastGeneratedImage.downloadName || 'athena-image.png'}
+                                    className="flex-1 text-center rounded-xl border border-cyan-500/30 bg-cyan-500/10 py-2 text-[10px] uppercase tracking-[0.14em] text-cyan-300 hover:bg-cyan-500/20 transition-colors font-semibold"
+                                >
+                                    Salvar
+                                </a>
+                                <button
+                                    onClick={() => setLastGeneratedImage(null)}
+                                    className="flex-1 rounded-xl border border-white/10 bg-white/5 py-2 text-[10px] uppercase tracking-[0.14em] text-zinc-400 hover:bg-white/10 hover:text-zinc-200 transition-colors font-semibold"
+                                >
+                                    Fechar
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* Lightbox — imagem expandida em tela cheia */}
+                {imageExpanded && lastGeneratedImage?.src && (
+                    <div
+                        className="fixed inset-0 z-[80] flex items-center justify-center bg-black/85 backdrop-blur-sm"
+                        onClick={() => setImageExpanded(false)}
+                    >
+                        <button
+                            className="absolute top-5 right-5 flex items-center justify-center w-9 h-9 rounded-xl border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/10 hover:text-white transition-colors"
+                            onClick={() => setImageExpanded(false)}
+                            title="Fechar"
+                        >
+                            <X size={16} />
+                        </button>
+                        <img
+                            src={lastGeneratedImage.src}
+                            alt={lastGeneratedImage.caption}
+                            className="max-w-[90vw] max-h-[88vh] rounded-2xl shadow-[0_40px_120px_rgba(0,0,0,0.9)] object-contain"
+                            onClick={(e) => e.stopPropagation()}
+                        />
+                    </div>
+                )}
 
                 {/* Tool Confirmation Modal */}
                 <ConfirmationPopup

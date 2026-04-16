@@ -1,11 +1,23 @@
-# Skill: Geração de Imagem
+# Skill: Geracao de Imagem
 
-Gera imagens usando ComfyUI local via tool `generate_image`.
+Gera imagens usando **GPT Image (OpenAI API)** via tool `generate_image`.
+
+## Motor atual
+- Modelo: `gpt-image-1` (OpenAI)
+- Requer: `OPENAI_API_KEY` no `.env`
 
 ## Regras
-- SEMPRE fornecer `prompt` (positivo) e `negative_prompt` (o que evitar: artefatos, blur, watermark, etc.)
-- Usar string vazia em negative_prompt apenas se realmente nada deve ser excluído
-- Definir `aspect_ratio` e `image_size` quando relevante
+- Fornecer `prompt` claro e detalhado: sujeito, estilo, iluminacao, composicao, cores
+- Definir `aspect_ratio`:
+  - `1:1` — feed Instagram, quadrado (padrao)
+  - `9:16` — stories e reels
+  - `16:9` — capas e thumbnails landscape
+  - `3:4` / `4:3` — outros formatos
+- Definir `image_size`:
+  - `1K` — qualidade media (padrao)
+  - `2K` ou `4K` — alta qualidade
+  - `512` — rapido / baixa qualidade
+- Nao e necessario `negative_prompt`
 
 ## Ativado por
 - [[Loop_de_execucao]]

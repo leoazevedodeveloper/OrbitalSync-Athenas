@@ -1,4 +1,4 @@
-/** Origem do backend (Socket.IO + `/api/comfyui-image` no histórico). */
+/** Origem do backend (Socket.IO + `/api/generated-image` no histórico). */
 export const BACKEND_ORIGIN = 'http://localhost:8000';
 
 /** Evita crescimento ilimitado do estado após muitas horas (lag de render/memória). */

@@ -85,8 +85,6 @@ def append_settings_runtime_fields(payload: dict) -> None:
             "supabase_anon_key_length": 0,
             "supabase_service_role_key_length": 0,
             "gemini_configured": False,
-            "comfyui_base_url": "http://127.0.0.1:2000",
-            "comfyui_workflow_file": "",
             "secrets_visible_in_ui": False,
             "supabase_secret_length": 0,
             "gemini_api_key_length": 0,

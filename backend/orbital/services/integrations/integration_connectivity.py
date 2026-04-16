@@ -1,4 +1,4 @@
-"""Testes ativos de conectividade (Supabase, ComfyUI, webhooks) — sem expor segredos ao cliente."""
+"""Testes ativos de conectividade (Supabase, webhooks) — sem expor segredos ao cliente."""
 from __future__ import annotations
 
 import logging
@@ -106,51 +106,6 @@ def test_supabase() -> Dict[str, Any]:
             "message": str(e)[:220],
             "latency_ms": _ms(t0),
         }
-
-
-def test_comfyui(base_url: str) -> Dict[str, Any]:
-    t0 = time.perf_counter()
-    raw = (base_url or "").strip().rstrip("/")
-    if not raw:
-        return {
-            "ok": False,
-            "reachable": False,
-            "tier": "down",
-            "message": "COMFYUI_BASE_URL não definido.",
-            "latency_ms": _ms(t0),
-        }
-    paths = ("/system_stats", "/queue", "/object_info", "/")
-    last_err = ""
-    timeout = httpx.Timeout(5.0, connect=2.0)
-    for path in paths:
-        try:
-            with httpx.Client(timeout=timeout) as client:
-                r = client.get(f"{raw}{path}")
-            latency = _ms(t0)
-            code = r.status_code
-            if code < 500:
-                tier = _http_tier(code)
-                return {
-                    "ok": tier == "up",
-                    "reachable": True,
-                    "tier": tier,
-                    "status_code": code,
-                    "path_checked": path,
-                    "message": f"Resposta em {path} (HTTP {code}).",
-                    "latency_ms": latency,
-                }
-            last_err = f"HTTP {code} em {path}"
-        except httpx.ConnectError as e:
-            last_err = f"Sem conexão em {path}: {e!s}"[:200]
-        except Exception as e:
-            last_err = str(e)[:200]
-    return {
-        "ok": False,
-        "reachable": False,
-        "tier": "down",
-        "message": last_err or "ComfyUI não respondeu.",
-        "latency_ms": _ms(t0),
-    }
 
 
 
@@ -342,10 +297,9 @@ def test_webhooks_sample(max_hooks: int = 10) -> Dict[str, Any]:
     }
 
 
-def run_all_integration_tests(comfy_base_url: str) -> Dict[str, Any]:
-    """Executa testes de conectividade (Socket.IO): Supabase, ComfyUI, webhooks."""
+def run_all_integration_tests() -> Dict[str, Any]:
+    """Executa testes de conectividade (Socket.IO): Supabase e webhooks."""
     return {
         "supabase": test_supabase(),
-        "comfyui": test_comfyui(comfy_base_url),
         "webhooks": test_webhooks_sample(),
     }

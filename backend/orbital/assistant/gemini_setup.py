@@ -46,36 +46,33 @@ def refresh_gemini_client():
 generate_image_tool = {
     "name": "generate_image",
     "description": (
-        "Generates an image using local ComfyUI. You MUST supply both a strong positive prompt and a "
-        "negative prompt (what to avoid: artifacts, wrong style, extra limbs, blur, watermark, etc.). "
-        "Use an empty string for negative_prompt only if truly nothing should be excluded."
+        "Generates an image using Nano Banana 2 (Gemini API, free tier). "
+        "Supply a clear and detailed prompt describing what to render: subject, style, lighting, "
+        "composition, colors. The model renders text with high precision — include any text you want "
+        "in the image directly in the prompt."
     ),
     "parameters": {
         "type": "OBJECT",
         "properties": {
             "prompt": {
                 "type": "STRING",
-                "description": "Positive prompt: what to render, style, lighting, composition (clear and specific).",
-            },
-            "negative_prompt": {
-                "type": "STRING",
                 "description": (
-                    "Negative prompt: what to avoid (e.g. blurry, low quality, deformed hands, extra fingers, "
-                    "text watermark, cropped face, oversaturated). Tailor to Leo's request and the chosen style."
+                    "Full description of the image: subject, style, mood, lighting, composition. "
+                    "Include any text to appear in the image directly here."
                 ),
             },
             "aspect_ratio": {
                 "type": "STRING",
-                "description": "Target aspect ratio for the generated image.",
+                "description": "Target aspect ratio. Use 1:1 for Instagram feed, 9:16 for stories/reels, 16:9 for covers.",
                 "enum": ["1:1", "16:9", "4:3", "3:4", "9:16"],
             },
             "image_size": {
                 "type": "STRING",
-                "description": "Image size/quality setting (currently ignored by ComfyUI integration; workflow controls final size).",
-                "enum": ["1K", "2K", "4K"],
+                "description": "Output resolution. 1K is the default and works for most cases.",
+                "enum": ["512", "1K", "2K", "4K"],
             },
         },
-        "required": ["prompt", "negative_prompt"],
+        "required": ["prompt"],
     },
 }
 

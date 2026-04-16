@@ -9,7 +9,7 @@ from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 
 from orbital.services.brain import BrainVault
-from orbital.services.integrations.comfyui_client import safe_comfyui_imagens_file
+from orbital.services.integrations.image_client import safe_generated_image_file
 from orbital.server import state as st
 
 _BRAIN_API_KEY = (os.getenv("ORBITAL_BRAIN_API_KEY") or "").strip()
@@ -33,10 +33,10 @@ def register_http_routes(app: FastAPI) -> None:
     async def status():
         return {"status": "running", "service": "A.D.A Backend"}
 
-    @app.get("/api/comfyui-image")
-    async def comfyui_saved_image(relpath: str = Query(..., min_length=1, max_length=512)):
-        """Serve ficheiros dentro de integrations/comfyui/imagens (e legado data/comfyui/imagens)."""
-        resolved = safe_comfyui_imagens_file(relpath)
+    @app.get("/api/generated-image")
+    async def generated_image(relpath: str = Query(..., min_length=1, max_length=512)):
+        """Serve imagens geradas pelo Nano Banana 2 em data/generated-images/."""
+        resolved = safe_generated_image_file(relpath)
         if resolved is None:
             raise HTTPException(status_code=404, detail="Not found")
         media_type, _ = mimetypes.guess_type(str(resolved))

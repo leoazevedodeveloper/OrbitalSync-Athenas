@@ -24,8 +24,6 @@ ENV_MAP: Dict[str, str] = {
     "supabase_config_enabled": "SUPABASE_CONFIG_ENABLED",
     "athena_settings_module_key": "ATHENA_SETTINGS_MODULE_KEY",
     "gemini_api_key": "GEMINI_API_KEY",
-    "comfyui_base_url": "COMFYUI_BASE_URL",
-    "comfyui_workflow_file": "COMFYUI_WORKFLOW_FILE",
 }
 
 
@@ -137,22 +135,6 @@ def merge_save_and_apply(updates: Dict[str, Any]) -> Tuple[bool, str]:
         if u:
             data["gemini_api_key"] = u
 
-    if "comfyui_base_url" in updates:
-        u = str(updates.get("comfyui_base_url") or "").strip()
-        if u:
-            data["comfyui_base_url"] = u
-        else:
-            data.pop("comfyui_base_url", None)
-
-    if "comfyui_workflow_file" in updates:
-        u = str(updates.get("comfyui_workflow_file") or "").strip()
-        if u:
-            data["comfyui_workflow_file"] = u
-        else:
-            from orbital.services.integrations.comfyui_client import DEFAULT_COMFYUI_WORKFLOW_REL
-
-            data["comfyui_workflow_file"] = DEFAULT_COMFYUI_WORKFLOW_REL
-
     ok, err = _write_raw_file(data)
     if not ok:
         return False, f"Falha ao gravar: {err}"
@@ -173,10 +155,6 @@ def build_credentials_public_meta() -> Dict[str, Any]:
     gemini = (os.getenv("GEMINI_API_KEY") or "").strip()
     supabase_secret_length = len(srk) if srk else len(anon)
     supabase_service_role_key_length = len(srk)
-    comfy = (os.getenv("COMFYUI_BASE_URL") or "http://127.0.0.1:2000").strip()
-    from orbital.services.integrations.comfyui_client import comfyui_workflow_path_for_settings_meta
-
-    wf = comfyui_workflow_path_for_settings_meta()
     host = ""
     if url:
         try:
@@ -197,8 +175,6 @@ def build_credentials_public_meta() -> Dict[str, Any]:
         "athena_settings_module_key": module_key,
         "supabase_anon_key_length": len(anon) if anon else 0,
         "gemini_configured": bool(gemini),
-        "comfyui_base_url": comfy,
-        "comfyui_workflow_file": wf,
         "secrets_visible_in_ui": expose,
         "supabase_secret_length": supabase_secret_length,
         "supabase_service_role_key_length": supabase_service_role_key_length,

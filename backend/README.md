@@ -17,7 +17,7 @@ backend/
 │   ├── services/             # Supabase, project_manager, tools, integrações, memory
 │   └── server/
 │       ├── bootstrap.py      # FastAPI + Socket.IO ASGI
-│       ├── http_routes.py    # GET /status, /api/comfyui-image
+│       ├── http_routes.py    # GET /status, /api/generated-image
 │       ├── state.py, audio.py
 │       └── socket_handlers/  # connect, audio, chat, settings, emit
 ```

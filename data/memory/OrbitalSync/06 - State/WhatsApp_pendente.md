@@ -5,12 +5,9 @@
 - Se Leo disser "agora não" / "depois" / "ignora": use `write_brain` (note: `06 - State/WhatsApp_pendente`, mode: `append`) para registrar a mensagem pendente na seção abaixo
 - Ao responder um contato: use `read_brain` para ler esta nota, remova **apenas as linhas daquele contato**, e reescreva o restante com `write_brain` (mode: `overwrite`) — nunca apague linhas de outros contatos
 - Se for um remetente diferente de msgs anteriores recentes: alerte Leo como notificação separada e prioritária
-- Se Leo disser "apaga", "pode apagar", "já respondi", "limpa as pendentes" ou similar: use `write_brain` (note: `06 - State/WhatsApp_pendente`, mode: `overwrite`) reescrevendo o arquivo inteiro — mantenha apenas o cabeçalho `# WhatsApp — Mensagens Pendentes`, as instruções, a seção `## Relacionado` e a linha `## Mensagens não respondidas` vazia, sem nenhuma entrada
+- Se Leo disser "apaga", "pode apagar", "já respondi", "limpa as pendentes" ou similar: use `read_brain` para ler a nota atual e `write_brain` (mode: `overwrite`) mantendo tudo exatamente como está até `## Mensagens não respondidas`, removendo apenas as entradas dessa seção (deixe-a vazia)
 
 ## Relacionado
 [[WhatsApp]] · [[WhatsApp_log_index]] · [[Contexto_atual]]
 
 ## Mensagens não respondidas
-- 15:00 | Cássio (+553299946263): Estou só aguardando um horário que tem alguém lá pra receber.
-- 15:01 | Cássio (+553299946263): Me fala um horário que eu ligo pro Edinho e vejo se a loja vai estar disponível pra entregar.
-

@@ -8,10 +8,10 @@ venv/
 .venv/
 env/
 
-# ComfyUI — saídas geradas pela ATHENAS (cópia local)
-integrations/comfyui/imagens/
+# Imagens geradas pela Athena (Nano Banana 2)
+data/generated-images/
 
-# Credenciais definidas pela UI (Supabase, Gemini, ComfyUI)
+# Credenciais definidas pela UI (Supabase, Gemini)
 data/local_credentials.json
 
 # ADA Specific Local Data

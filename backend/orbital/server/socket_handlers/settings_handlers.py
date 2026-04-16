@@ -22,12 +22,11 @@ from .common import append_settings_runtime_fields
 
 
 async def emit_integration_tests_for_client(sio, sid: str) -> None:
-    """Ping Supabase, ComfyUI e webhooks; emite `integration_test_result` para o cliente."""
+    """Ping Supabase e webhooks; emite `integration_test_result` para o cliente."""
     try:
         from orbital.services.integrations.integration_connectivity import run_all_integration_tests
 
-        comfy_base = (os.getenv("COMFYUI_BASE_URL") or "http://127.0.0.1:2000").strip().rstrip("/")
-        results = await asyncio.to_thread(run_all_integration_tests, comfy_base)
+        results = await asyncio.to_thread(run_all_integration_tests)
         await sio.emit(
             "integration_test_result",
             {"ok": True, "results": results},
@@ -239,7 +238,7 @@ def register_settings_handlers(sio, emit_runtime_log, emit_full_settings):
 
     @sio.event
     async def test_integrations(sid, data=None):
-        """Ping Supabase, ComfyUI e webhooks. Logs: ORBITAL_INTEGRATION_TEST_LOG=1."""
+        """Ping Supabase e webhooks. Logs: ORBITAL_INTEGRATION_TEST_LOG=1."""
         await emit_integration_tests_for_client(sio, sid)
 
     @sio.event

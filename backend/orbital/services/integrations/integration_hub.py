@@ -4,10 +4,8 @@ from __future__ import annotations
 import os
 from urllib.parse import urlparse
 
-from orbital.paths import REPO_ROOT
 from orbital.services.supabase.remote_config import settings_module_key, supabase_config_enabled
 
-from .comfyui_client import resolved_comfyui_workflow_path
 from .webhook_config import list_hook_summaries, load_webhooks_config
 
 
@@ -27,9 +25,6 @@ def _supabase_host() -> str:
 def build_integrations_snapshot() -> dict:
     """Dados seguros para o hub de integrações no app."""
     supabase_on = supabase_config_enabled()
-    comfy_base = (os.getenv("COMFYUI_BASE_URL") or "http://127.0.0.1:2000").strip().rstrip("/")
-    workflow_path = resolved_comfyui_workflow_path()
-    workflow_ok = workflow_path.is_file()
 
     hooks: list = []
     try:
@@ -37,7 +32,6 @@ def build_integrations_snapshot() -> dict:
     except Exception:
         hooks = []
 
-    # Onde o backend tenta ler hooks (não confundir com URL vazia na linha).
     webhooks_source = "supabase" if supabase_config_enabled() else "local_file"
 
     return {
@@ -45,11 +39,6 @@ def build_integrations_snapshot() -> dict:
             "configured": supabase_on,
             "host": _supabase_host() if supabase_on else "",
             "module_key": settings_module_key(),
-        },
-        "comfyui": {
-            "base_url": comfy_base,
-            "workflow_ready": workflow_ok,
-            "workflow_path": str(workflow_path),
         },
         "n8n": {
             "label": "Webhooks / n8n",

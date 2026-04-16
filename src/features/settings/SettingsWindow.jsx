@@ -57,7 +57,7 @@ const TOOLS = [
     { id: 'create_project', label: 'Criar projeto' },
     { id: 'switch_project', label: 'Trocar projeto' },
     { id: 'list_projects', label: 'Listar projetos' },
-    { id: 'generate_image', label: 'Gerar imagem (ComfyUI)' },
+    { id: 'generate_image', label: 'Gerar imagem (Nano Banana 2)' },
     { id: 'list_launch_apps', label: 'Listar apps locais' },
     { id: 'launch_app', label: 'Abrir app local' },
     { id: 'trigger_webhook', label: 'Webhooks / automação' },
@@ -1126,7 +1126,7 @@ function BrainAthenasSection({
 }
 
 /**
- * Integrações opcionais: ComfyUI, n8n/webhooks.
+ * Integrações opcionais: Nano Banana 2 (geração de imagem), n8n/webhooks.
  */
 // ─────────────────────────────────────────────────────────────
 // WhatsApp Section
@@ -1271,8 +1271,22 @@ function WhatsAppSection({ embedded = false }) {
 
     const clearPending = async () => {
         setClearing(true);
-        const header = `# WhatsApp — Mensagens Pendentes\n\n**Instruções para ATHENAS:**\n- Ao receber notificação de WhatsApp: use \`read_brain\` nesta nota e conte quantas mensagens pendentes já existem daquele remetente. Se houver mais de uma, diga "Leo, você tem X mensagens de [Nome], quer que eu te mostre?" — não leia todas de uma vez. Se for a primeira do remetente, diga "Leo, chegou mensagem de [Nome]: '[texto]'. Quer responder?"\n- Se Leo disser "agora não" / "depois" / "ignora": use \`write_brain\` (note: \`06 - State/WhatsApp_pendente\`, mode: \`append\`) para registrar a mensagem pendente na seção abaixo\n- Ao responder um contato: use \`read_brain\` para ler esta nota, remova **apenas as linhas daquele contato**, e reescreva o restante com \`write_brain\` (mode: \`overwrite\`) — nunca apague linhas de outros contatos\n- Se for um remetente diferente de msgs anteriores recentes: alerte Leo como notificação separada e prioritária\n- Se Leo disser "apaga", "pode apagar", "já respondi", "limpa as pendentes" ou similar: use \`write_brain\` (note: \`06 - State/WhatsApp_pendente\`, mode: \`overwrite\`) reescrevendo o arquivo inteiro — mantenha apenas o cabeçalho \`# WhatsApp — Mensagens Pendentes\`, as instruções e a linha \`## Mensagens não respondidas\` vazia, sem nenhuma entrada\n\n## Mensagens não respondidas\n`;
-        await brainFetch('write', { note: '06 - State/WhatsApp_pendente', content: header, mode: 'overwrite' });
+        const marker = '## Mensagens não respondidas';
+        const data = await brainFetch('read', { note: '06 - State/WhatsApp_pendente' });
+        const current = typeof data?.content === 'string' ? data.content : '';
+        const markerIdx = current.indexOf(marker);
+        const lineEnd = markerIdx >= 0 ? current.indexOf('\n', markerIdx) : -1;
+
+        let cleared;
+        if (markerIdx >= 0) {
+            const end = lineEnd >= 0 ? lineEnd + 1 : current.length;
+            const prefix = current.slice(0, end).replace(/\s*$/, '\n');
+            cleared = `${prefix}\n`;
+        } else {
+            cleared = `${marker}\n\n`;
+        }
+
+        await brainFetch('write', { note: '06 - State/WhatsApp_pendente', content: cleared, mode: 'overwrite' });
         setPending([]);
         setClearing(false);
         setClearFeedback('Pendentes limpas.');
@@ -1601,22 +1615,12 @@ function IntegrationsHubSection({
     credSaving,
     savePartial,
 }) {
-    const comfy = integrations?.comfyui;
     const n8n = integrations?.n8n;
     const meta = credentialsMeta;
 
-    const [comfyUrl, setComfyUrl] = useState('http://127.0.0.1:2000');
-    const [comfyWorkflow, setComfyWorkflow] = useState('');
-
-    useEffect(() => {
-        if (!meta || typeof meta !== 'object') return;
-        setComfyUrl(meta.comfyui_base_url || 'http://127.0.0.1:2000');
-        setComfyWorkflow(meta.comfyui_workflow_file || '');
-    }, [meta]);
-
     const integrationsReadyCount =
         integrations && meta
-            ? [!!comfy?.workflow_ready, (n8n?.hooks_count ?? 0) > 0].filter(Boolean).length
+            ? [(n8n?.hooks_count ?? 0) > 0].filter(Boolean).length
             : 0;
 
     return (
@@ -1632,13 +1636,13 @@ function IntegrationsHubSection({
                                 </h3>
                                 {integrations && meta ? (
                                     <span className="inline-flex items-center rounded-full border border-teal-500/25 bg-black/40 px-2.5 py-1 text-[9px] font-bold uppercase tracking-[0.14em] text-teal-200/85">
-                                        {integrationsReadyCount}/2 ligadas
+                                        {integrationsReadyCount}/1 ligadas
                                     </span>
                                 ) : null}
                             </div>
                             <p className="mt-3 max-w-2xl text-xs leading-relaxed text-zinc-400">
-                                Serviços à volta do núcleo: imagens (ComfyUI) e automações HTTP (n8n / webhooks).{' '}
-                                <strong className="font-medium text-zinc-300">Testar ligações</strong> cobre Supabase, ComfyUI
+                                Serviços à volta do núcleo: imagens (Nano Banana 2 via Gemini API) e automações HTTP (n8n / webhooks).{' '}
+                                <strong className="font-medium text-zinc-300">Testar ligações</strong> cobre Supabase
                                 e webhooks (o Supabase também está no cérebro).
                             </p>
                         </div>
@@ -1682,92 +1686,6 @@ function IntegrationsHubSection({
                                 </div>
                             ) : null}
                             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 sm:gap-5 xl:grid-cols-3 xl:gap-5 2xl:gap-6">
-                                <IntegrationModalCard
-                                    modalTitle="ComfyUI"
-                                    modalSubtitle="URL base e ficheiro workflow (local_credentials.json)"
-                                    summary={
-                                        <>
-                                            <div className="mb-2 flex items-start justify-between gap-2">
-                                                <div className="flex min-w-0 items-center gap-2">
-                                                    <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl border border-violet-500/30 bg-violet-500/10 text-violet-200">
-                                                        <Sparkles className="h-4 w-4" strokeWidth={2} />
-                                                    </span>
-                                                    <div className="min-w-0">
-                                                        <div className="text-sm font-semibold leading-tight text-zinc-100">ComfyUI</div>
-                                                        <div className="text-[10px] uppercase tracking-wider text-zinc-500">API local</div>
-                                                    </div>
-                                                </div>
-                                                <IntegrationStatusPill active={!!comfy?.workflow_ready}>
-                                                    {comfy?.workflow_ready ? 'Pronto' : 'Incompleto'}
-                                                </IntegrationStatusPill>
-                                            </div>
-                                            <p className="line-clamp-2 text-[11px] leading-relaxed text-zinc-400">
-                                                Imagens pela ATHENAS — servidor ComfyUI + JSON workflow (API).
-                                            </p>
-                                            <HubMetaBlock>
-                                                <HubMetaRow label="URL" value={comfy?.base_url || '—'} />
-                                                <HubMetaRow label="Workflow" value={shortPath(comfy?.workflow_path)} />
-                                            </HubMetaBlock>
-                                            <IntegrationProbeToggle
-                                                data={testResults?.comfyui}
-                                                webhookMode={false}
-                                                testRunning={testRunning}
-                                            />
-                                        </>
-                                    }
-                                    credentials={
-                                        meta ? (
-                                            <div className="flex flex-col gap-2.5">
-                                                <div>
-                                                    <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-zinc-400">
-                                                        URL base
-                                                    </label>
-                                                    <input
-                                                        type="text"
-                                                        value={comfyUrl}
-                                                        onChange={(e) => setComfyUrl(e.target.value)}
-                                                        placeholder="http://127.0.0.1:2000"
-                                                        className={fieldClass}
-                                                    />
-                                                </div>
-                                                <div>
-                                                    <label className="mb-1.5 block text-[10px] uppercase tracking-wider text-zinc-400">
-                                                        Workflow API (opcional)
-                                                    </label>
-                                                    <input
-                                                        type="text"
-                                                        value={comfyWorkflow}
-                                                        onChange={(e) => setComfyWorkflow(e.target.value)}
-                                                        placeholder="Opcional — vazio grava integrations/comfyui/workflow_api.json"
-                                                        className={fieldClass}
-                                                    />
-                                                </div>
-                                                <button
-                                                    type="button"
-                                                    onClick={() =>
-                                                        savePartial({
-                                                            comfyui_base_url: comfyUrl.trim(),
-                                                            comfyui_workflow_file: comfyWorkflow.trim(),
-                                                        })
-                                                    }
-                                                    disabled={credSaving || !meta}
-                                                    className="mt-1 inline-flex items-center justify-center gap-2 rounded-xl border border-violet-500/35 bg-violet-500/15 px-3 py-2 text-[10px] font-semibold uppercase tracking-[0.12em] text-violet-100 transition-colors hover:bg-violet-500/25 disabled:cursor-not-allowed disabled:opacity-45"
-                                                    style={{ WebkitAppRegion: 'no-drag' }}
-                                                >
-                                                    {credSaving ? (
-                                                        <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden />
-                                                    ) : (
-                                                        <Save className="h-3.5 w-3.5" aria-hidden />
-                                                    )}
-                                                    Guardar ComfyUI
-                                                </button>
-                                            </div>
-                                        ) : (
-                                            <p className="text-xs text-zinc-400">A carregar metadados…</p>
-                                        )
-                                    }
-                                />
-
                                 <IntegrationModalCard
                                     expandMode="info"
                                     modalTitle="n8n e webhooks"
@@ -2055,8 +1973,6 @@ function EnvReferenceSection() {
             title: 'Integrações',
             icon: Plug2,
             keys: [
-                ['COMFYUI_BASE_URL', 'Base URL do ComfyUI local.'],
-                ['COMFYUI_WORKFLOW_FILE', 'Workflow customizado (opcional).'],
                 ['ATHENA_GOOGLE_CALENDAR_WEBHOOK_URL', 'Webhook padrão de calendário (opcional).'],
                 ['ORBITAL_DISABLE_DEFAULT_CALENDAR_WEBHOOK', 'Desliga injeção do webhook padrão.'],
                 ['ORBITAL_INTEGRATION_TEST_LOG', 'Logs extras no teste de integrações.'],
@@ -2346,8 +2262,6 @@ const SettingsWindow = ({
                     supabase_anon_key_length: 0,
                     supabase_service_role_key_length: 0,
                     gemini_configured: false,
-                    comfyui_base_url: 'http://127.0.0.1:2000',
-                    comfyui_workflow_file: '',
                     secrets_visible_in_ui: false,
                     supabase_secret_length: 0,
                     gemini_api_key_length: 0,
@@ -2425,7 +2339,7 @@ const SettingsWindow = ({
                         Configurações
                     </h2>
                     <p className="mt-1 max-w-2xl text-xs text-zinc-400">
-                        Áudio, câmera, cérebro (Supabase + Gemini), integrações (ComfyUI, n8n), apps e ATHENAS.
+                        Áudio, câmera, cérebro (Supabase + Gemini), integrações (Nano Banana 2, n8n), apps e ATHENAS.
                     </p>
                     <p className="mt-1 text-[10px] text-zinc-400">Esc para fechar</p>
                 </div>

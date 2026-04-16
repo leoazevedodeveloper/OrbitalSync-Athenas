@@ -24,7 +24,7 @@ Rode na ordem abaixo (settings -> tool_permissions -> webhook_defaults -> webhoo
 
 ## Notas
 - Os scripts não habilitam RLS nem policies. O objetivo aqui é apenas criar estrutura e dados.
-- `athena_settings` usa `module_key` + `values jsonb` para suportar modulos como `athena` e `comfyui`.
+- `athena_settings` usa `module_key` + `values jsonb` para suportar modulos (ex.: `athena`).
 - `athena_tool_permissions` é 100% relacional (1 linha por permissão).
 - Campos `args`, `body` e `default_headers` continuam em `jsonb`.
 - `default_timeout_sec` é `float8` para aceitar inteiros ou valores com decimais.

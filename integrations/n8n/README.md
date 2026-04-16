@@ -10,4 +10,4 @@ Credenciais e URLs de produção alinham com **`config/webhooks.json`** (ou Supa
 
 Evolution API (WhatsApp) roda via Docker — ver **`integrations/evolution-api/docker-compose.yml`**.
 
-ComfyUI (workflow de imagens) está em **`integrations/comfyui/`**.
+Geração de imagem: **Nano Banana 2** via Gemini API — sem pasta de integração dedicada, usa `GEMINI_API_KEY`.

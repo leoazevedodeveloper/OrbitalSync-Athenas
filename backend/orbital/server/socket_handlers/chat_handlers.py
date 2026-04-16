@@ -6,7 +6,7 @@ import base64
 import binascii
 
 from orbital.settings import PROJECT_ROOT
-from orbital.services.integrations.comfyui_client import repo_relative_posix, save_chat_upload_image_to_data_dir
+from orbital.services.integrations.image_client import repo_relative_posix, save_chat_upload_image_to_data_dir
 from orbital.services.project_manager import ProjectManager
 
 from .. import state as st

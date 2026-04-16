@@ -87,7 +87,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ note: $(\"Parse Message\").first().json.brainNote, content: \"\n### \" + $(\"Parse Message\").first().json.timeStr + \" — \" + $(\"Parse Message\").first().json.pushName + \" (\" + $(\"Parse Message\").first().json.phone + \")\n\" + $(\"Parse Message\").first().json.text + \"\n\", mode: \"append\" }) }}",
+        "jsonBody": "={{ { note: $('Parse Message').first().json.brainNote, content: '\\n### ' + $('Parse Message').first().json.timeStr + ' — ' + $('Parse Message').first().json.pushName + ' (' + $('Parse Message').first().json.phone + ')\\n' + $('Parse Message').first().json.text + '\\n', mode: 'append' } }}",
         "options": {
           "response": {
             "response": {
@@ -401,7 +401,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ note: $(\"Parse Message\").first().json.brainNote, content: \"# WhatsApp Log — \" + $(\"Parse Message\").first().json.dateStr + \"\n[[WhatsApp_log_index]] · [[WhatsApp]] · [[WhatsApp_pendente]]\n\", mode: \"overwrite\" }) }}",
+        "jsonBody": "={{ JSON.stringify({ note: $('Parse Message').first().json.brainNote, content: '# WhatsApp Log — ' + $('Parse Message').first().json.dateStr + '\\n[[WhatsApp_log_index]] · [[WhatsApp]] · [[WhatsApp_pendente]]\\n', mode: 'overwrite' }) }}",
         "options": {
           "response": {
             "response": {
@@ -432,7 +432,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({ note: \"07 - Logs/WhatsApp_log_index\", content: \"- [[\" + $(\"Parse Message\").first().json.dateStr + \"WW]]\n\", mode: \"append\" }) }}",
+        "jsonBody": "={{ JSON.stringify({ note: '07 - Logs/WhatsApp_log_index', content: '- [[' + $('Parse Message').first().json.dateStr + 'WW]]\\n', mode: 'append' }) }}",
         "options": {
           "response": {
             "response": {

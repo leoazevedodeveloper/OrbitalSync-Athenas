@@ -59,7 +59,7 @@ Documentar integracoes externas e como elas funcionam no ecossistema da ATHENAS.
 
 ### Exemplos
 - "Integracao com n8n: fluxo de disparo por webhook."
-- "ComfyUI: endpoint, formato de payload e tratamento de erro."
+- "Nano Banana 2: geracao de imagem via Gemini API, free tier 500/dia, modelo gemini-2.5-flash-preview."
 - "Google Calendar: escopo de permissao e rotina de sincronizacao."
 
 ### O que evitar

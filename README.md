@@ -9,7 +9,7 @@ A.D.A V2 is a desktop multimodal assistant built with Electron (React) + FastAPI
 - Optional face authentication
 - Project-based chat persistence
 - File/project tools: read/write files, create/switch/list projects
-- Image generation: **ComfyUI local** (`integrations/comfyui/workflow_api.json`) — ver `integrations/comfyui/README.md`
+- Image generation: **Nano Banana 2** via Gemini API (free tier, 500/dia) — mesma `GEMINI_API_KEY` da Athena
 
 ## Removed Modules
 
@@ -28,11 +28,10 @@ npm install
 
 3. Add environment variable in `.env`:
 
-Veja também `.env.example` (inclui URL do ComfyUI).
+Veja também `.env.example`.
 
 ```env
 GEMINI_API_KEY=your_key_here
-COMFYUI_BASE_URL=http://127.0.0.1:2000
 ```
 
 4. Run app:
@@ -59,14 +58,13 @@ Use these commands in chat:
 - `backend/orbital/server/state.py` / `audio.py`: estado do loop e utilitários do orb
 - `backend/orbital/settings.py`: estado em memória + gravação só no Supabase; `orbital/paths.py`: raízes do repo
 - `backend/orbital/assistant/`: ATHENAS — Gemini Live, `AudioLoop`, devices
-- `backend/orbital/services/`: auth facial, launch apps, webhooks, ComfyUI, projetos, tools
+- `backend/orbital/services/`: auth facial, launch apps, webhooks, Nano Banana 2 (imagem), projetos, tools
 - `backend/athenas.py`: CLI opcional do loop (`--mode camera|screen|none`)
 - `config/`: ficheiros de configuração versionados (ex.: `webhooks.json`)
 - `data/`: dados da app no disco (ver `data/README.md`)
 - `dev/scripts/`: scripts de diagnóstico e testes manuais (não usados pelo runtime)
 - `dev/ambiente/`: Cloudflare tunnel (`config.yml`), `cloudflared.exe` (opcional), notas Docker
 - `integrations/n8n/`: índice + `spotify/` e `google-calendar/`
-- `integrations/comfyui/`: workflow API ComfyUI, README e pasta `imagens/` (gerada)
 - `src/`: React UI
 - `electron/`: shell Electron (inclui caminho para `dev/ambiente`)
 - `supabase/`: SQL e documentação do backend remoto

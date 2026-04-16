@@ -40,7 +40,7 @@ if sys.version_info < (3, 11, 0):
 
 from orbital.paths import REPO_ROOT
 from orbital.services.brain import BrainVault
-from orbital.services.integrations.comfyui_client import generate_image_via_comfyui, resolved_comfyui_workflow_path
+from orbital.services.integrations.image_client import generate_image
 from orbital.services.integrations.launch_apps import launch_app_by_id, list_launch_apps_catalog
 from orbital.services.integrations.agenda_google import (
     delete_google_calendar_event,
@@ -994,35 +994,21 @@ class AudioLoop:
     async def handle_generate_image(
         self,
         prompt: str,
-        aspect_ratio: str = "16:9",
-        image_size: str = "2K",
-        negative_prompt: str = "",
+        aspect_ratio: str = "1:1",
+        image_size: str = "1K",
     ):
         """
-        Gera a imagem via ComfyUI local usando `integrations/comfyui/workflow_api.json`
-        (ou `COMFYUI_WORKFLOW_FILE`). Apenas ComfyUI.
+        Gera imagem via GPT Image (OpenAI API).
         Retorno: (base64, mime_type, image_relpath|None).
         """
-        workflow_path = str(resolved_comfyui_workflow_path())
-        base_url = (os.getenv("COMFYUI_BASE_URL") or "http://127.0.0.1:2000").strip().rstrip("/")
-
-        if not os.path.isfile(workflow_path):
-            raise FileNotFoundError(
-                f"Workflow do ComfyUI nao encontrado: '{workflow_path}'. "
-                f"Coloque `integrations/comfyui/workflow_api.json` ou defina `COMFYUI_WORKFLOW_FILE`."
-            )
-
         try:
-            return await asyncio.to_thread(
-                generate_image_via_comfyui,
-                base_url,
-                workflow_path,
-                prompt,
-                aspect_ratio,
-                negative_prompt,
+            return await generate_image(
+                prompt=prompt,
+                aspect_ratio=aspect_ratio,
+                image_size=image_size,
             )
         except Exception as e:
-            raise RuntimeError(f"Falha ao gerar imagem via ComfyUI: {e!r}") from e
+            raise RuntimeError(f"Falha ao gerar imagem: {e!r}") from e
 
     async def handle_trigger_webhook(self, hook_id: str, payload=None):
         """POST agendado em config/webhooks.json (ex.: n8n)."""
@@ -1611,13 +1597,11 @@ class AudioLoop:
 
                                 elif fc.name == "generate_image":
                                     img_prompt = fc.args.get("prompt", "") or prompt
-                                    neg = str(fc.args.get("negative_prompt", "") or "").strip()
-                                    aspect_ratio = fc.args.get("aspect_ratio", "16:9")
-                                    image_size = fc.args.get("image_size", "2K")
+                                    aspect_ratio = fc.args.get("aspect_ratio", "1:1")
+                                    image_size = fc.args.get("image_size", "1K")
                                     print(
                                         f"[ADA DEBUG] [TOOL] Tool Call: 'generate_image' "
-                                        f"aspect_ratio={aspect_ratio} image_size={image_size} "
-                                        f"negative_len={len(neg)}"
+                                        f"aspect_ratio={aspect_ratio} image_size={image_size}"
                                     )
 
                                     try:
@@ -1625,7 +1609,6 @@ class AudioLoop:
                                             prompt=img_prompt,
                                             aspect_ratio=aspect_ratio,
                                             image_size=image_size,
-                                            negative_prompt=neg,
                                         )
                                         if image_b64 and self.on_image_generated:
                                             # Push to frontend immediately (separate event).
@@ -1639,13 +1622,17 @@ class AudioLoop:
                                         function_response = types.FunctionResponse(
                                             id=fc.id,
                                             name=fc.name,
-                                            response={"result": "Image generated." if image_b64 else "Image generation failed."},
+                                            response={"result": "Image generated successfully." if image_b64 else "Image generation failed."},
                                         )
                                     except Exception as e:
+                                        import traceback
+                                        err_safe = repr(e).encode("ascii", "replace").decode("ascii")
+                                        print(f"[ADA DEBUG] [TOOL] generate_image FALHOU: {err_safe}")
+                                        print(traceback.format_exc())
                                         function_response = types.FunctionResponse(
                                             id=fc.id,
                                             name=fc.name,
-                                            response={"result": f"Failed to generate image: {str(e)}"},
+                                            response={"result": f"Image generation failed: {err_safe}. Check the Python backend logs for details."},
                                         )
                                     function_responses.append(function_response)
 
