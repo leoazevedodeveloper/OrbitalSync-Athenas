@@ -46,10 +46,11 @@ def refresh_gemini_client():
 generate_image_tool = {
     "name": "generate_image",
     "description": (
-        "Generates an image using Nano Banana 2 (Gemini API, free tier). "
-        "Supply a clear and detailed prompt describing what to render: subject, style, lighting, "
-        "composition, colors. The model renders text with high precision — include any text you want "
-        "in the image directly in the prompt."
+        "Generates or edits an image using GPT Image. "
+        "If the user has attached an image in the chat, this tool will EDIT that image based on the prompt. "
+        "Otherwise, it generates a new image from scratch. "
+        "Supply a clear and detailed prompt describing what to render or how to modify the existing image: "
+        "subject, style, lighting, composition, colors."
     ),
     "parameters": {
         "type": "OBJECT",

@@ -304,6 +304,17 @@ export default function MainScreen() {
       }
     });
 
+    socket.on('image_generated', (data: { data?: string; mime_type?: string; caption?: string; image_relpath?: string }) => {
+      debugLog('image_generated event', { has_data: Boolean(data?.data), relpath: data?.image_relpath });
+      setIsThinking(false);
+      assistantStreamMsgIdRef.current = null;
+      addMessage({
+        role: 'assistant',
+        content: data.caption || 'Imagem gerada',
+        image: data.image_relpath || undefined,
+      });
+    });
+
     return () => {
       socket.off('connect', handleConnected);
       socket.off('disconnect');
@@ -316,6 +327,7 @@ export default function MainScreen() {
       socket.off('chat_history');
       socket.off('tool_confirmation_request');
       socket.off('error');
+      socket.off('image_generated');
       if (pcmFlushTimerRef.current) clearTimeout(pcmFlushTimerRef.current);
     };
   }, []);
@@ -380,16 +392,18 @@ export default function MainScreen() {
   }, []);
 
   const handleConfirmTool = useCallback(() => {
-    debugLog('emit confirm_tool', { confirmed: true });
-    socket.emit('confirm_tool', { confirmed: true });
+    const id = toolConfirmation?.id;
+    debugLog('emit confirm_tool', { id, confirmed: true });
+    socket.emit('confirm_tool', { id, confirmed: true });
     setToolConfirmation(null);
-  }, []);
+  }, [toolConfirmation]);
 
   const handleDenyTool = useCallback(() => {
-    debugLog('emit confirm_tool', { confirmed: false });
-    socket.emit('confirm_tool', { confirmed: false });
+    const id = toolConfirmation?.id;
+    debugLog('emit confirm_tool', { id, confirmed: false });
+    socket.emit('confirm_tool', { id, confirmed: false });
     setToolConfirmation(null);
-  }, []);
+  }, [toolConfirmation]);
 
   const chatOpacity = chatPanelAnim.interpolate({
     inputRange: [0, 1],

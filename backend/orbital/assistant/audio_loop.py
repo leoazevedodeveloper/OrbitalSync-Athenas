@@ -157,6 +157,10 @@ class AudioLoop:
 
         # Video buffering state
         self._latest_image_payload = None
+
+        # Ultima imagem enviada via chat (para usar como base em generate_image)
+        # Formato: {"b64": str, "mime": str} ou None
+        self._last_chat_image = None
         # VAD State
         self._is_speaking = False
         self._silence_start_time = None
@@ -580,6 +584,8 @@ class AudioLoop:
             raise ValueError("Imagem vazia após decodificar base64.")
         image_bytes, mt = self._maybe_downscale_image_bytes(image_bytes, mt)
         print(f"[ADA DEBUG] Sending chat image via send_client_content mime={mt} bytes={len(image_bytes)}")
+        # Guarda referencia para ser usada como base na proxima geracao/edicao de imagem
+        self._last_chat_image = {"b64": image_b64, "mime": mt}
         self._mark_next_turn_from_chat()
         prompt = (user_text or "").strip()
         if not prompt:
@@ -999,9 +1005,12 @@ class AudioLoop:
         prompt: str,
         aspect_ratio: str = "1:1",
         image_size: str = "1K",
+        input_image_b64: str = None,
+        input_mime_type: str = None,
     ):
         """
-        Gera imagem via GPT Image (OpenAI API).
+        Gera ou edita imagem via GPT Image (OpenAI API).
+        Se input_image_b64 for passado, usa endpoint de edicao.
         Retorno: (base64, mime_type, image_relpath|None).
         """
         try:
@@ -1009,6 +1018,8 @@ class AudioLoop:
                 prompt=prompt,
                 aspect_ratio=aspect_ratio,
                 image_size=image_size,
+                input_image_b64=input_image_b64,
+                input_mime_type=input_mime_type,
             )
         except Exception as e:
             raise RuntimeError(f"Falha ao gerar imagem: {e!r}") from e
@@ -1602,8 +1613,13 @@ class AudioLoop:
                                     img_prompt = fc.args.get("prompt", "") or prompt
                                     aspect_ratio = fc.args.get("aspect_ratio", "1:1")
                                     image_size = fc.args.get("image_size", "1K")
+
+                                    # Usa imagem do chat como base para edicao (se disponivel)
+                                    chat_img = self._last_chat_image
+                                    self._last_chat_image = None
+                                    mode = "EDIT" if chat_img else "CREATE"
                                     print(
-                                        f"[ADA DEBUG] [TOOL] Tool Call: 'generate_image' "
+                                        f"[ADA DEBUG] [TOOL] Tool Call: 'generate_image' mode={mode} "
                                         f"aspect_ratio={aspect_ratio} image_size={image_size}"
                                     )
 
@@ -1612,6 +1628,8 @@ class AudioLoop:
                                             prompt=img_prompt,
                                             aspect_ratio=aspect_ratio,
                                             image_size=image_size,
+                                            input_image_b64=chat_img["b64"] if chat_img else None,
+                                            input_mime_type=chat_img["mime"] if chat_img else None,
                                         )
                                         if image_b64 and self.on_image_generated:
                                             # Push to frontend immediately (separate event).

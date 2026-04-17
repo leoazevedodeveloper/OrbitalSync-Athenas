@@ -2,15 +2,17 @@
 Cliente de geracao de imagem — OpenAI API (100%).
 
 Pipeline:
-  1. GPT-4o-mini turbina/traduz o prompt para ingles profissional
-  2. GPT Image 1.5 gera a imagem (fallback: gpt-image-1)
+  1. Gemini Flash turbina/traduz o prompt para ingles profissional
+  2. GPT Image 1.5 gera/edita a imagem (fallback: gpt-image-1)
 
-Variavel de ambiente necessaria:
-  OPENAI_API_KEY  (platform.openai.com)
+Variaveis de ambiente necessarias:
+  OPENAI_API_KEY   (platform.openai.com)
+  GEMINI_API_KEY   (aistudio.google.com)
 """
 from __future__ import annotations
 
 import base64
+import io
 import logging
 import os
 import secrets
@@ -106,12 +108,12 @@ def save_chat_upload_image_to_data_dir(raw: bytes, mime_type: str) -> Optional[P
         return None
 
 
-def _turbo_prompt(raw_prompt: str, api_key: str) -> str:
+def _enhance_prompt_gemini(raw_prompt: str, gemini_api_key: str) -> str:
     """
-    Usa GPT-4o-mini para traduzir e enriquecer o prompt em ingles profissional.
+    Usa Gemini Flash para traduzir e enriquecer o prompt em ingles profissional.
     Retorna o prompt melhorado, ou o original se falhar.
     """
-    from openai import OpenAI
+    from google import genai
 
     system = (
         "You are an expert image generation prompt engineer. "
@@ -122,27 +124,22 @@ def _turbo_prompt(raw_prompt: str, api_key: str) -> str:
         "keep it under 200 words; return ONLY the prompt text, no explanations."
     )
     try:
-        client = OpenAI(api_key=api_key)
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            messages=[
-                {"role": "system", "content": system},
-                {"role": "user", "content": f"Image idea: {raw_prompt}"},
-            ],
-            temperature=0.7,
-            max_tokens=300,
+        client = genai.Client(api_key=gemini_api_key)
+        response = client.models.generate_content(
+            model="gemini-2.5-flash-lite",
+            contents=f"{system}\n\nImage idea: {raw_prompt}",
         )
-        enhanced = (response.choices[0].message.content or "").strip()
+        enhanced = (response.text or "").strip()
         if enhanced:
-            print(f"[ImageGen] Prompt turbinado: {enhanced[:120]!r}...")
+            print(f"[ImageGen] Prompt turbinado (Gemini): {enhanced[:120]!r}...")
             return enhanced
     except Exception as e:
-        print(f"[ImageGen] Turbo prompt falhou, usando original: {e!r}")
+        print(f"[ImageGen] Enhance prompt falhou, usando original: {e!r}")
     return raw_prompt
 
 
 def _call_openai_images(api_key: str, model: str, prompt: str, size: str, quality: str) -> Tuple[bytes, str]:
-    """Chama OpenAI Images API. Levanta excecao se falhar."""
+    """Chama OpenAI Images API (geracao do zero). Levanta excecao se falhar."""
     from openai import OpenAI
 
     client = OpenAI(api_key=api_key)
@@ -166,13 +163,46 @@ def _call_openai_images(api_key: str, model: str, prompt: str, size: str, qualit
     raise RuntimeError(f"OpenAI retornou item sem b64_json nem url: {img}")
 
 
+def _call_openai_images_edit(
+    api_key: str, model: str, prompt: str, size: str, quality: str,
+    input_image_bytes: bytes, input_mime_type: str,
+) -> Tuple[bytes, str]:
+    """Chama OpenAI Images Edit API (edicao de imagem existente). Levanta excecao se falhar."""
+    from openai import OpenAI
+
+    client = OpenAI(api_key=api_key)
+    ext = ".jpg" if "jpeg" in input_mime_type else ".png"
+    image_file = io.BytesIO(input_image_bytes)
+    image_file.name = f"input{ext}"
+    response = client.images.edit(
+        model=model,
+        image=image_file,
+        prompt=prompt,
+        size=size,
+        n=1,
+    )
+    img = response.data[0] if response.data else None
+    if img is None:
+        raise RuntimeError(f"OpenAI nao retornou imagem editada. Resposta: {response}")
+    if img.b64_json:
+        return base64.b64decode(img.b64_json), "image/png"
+    if img.url:
+        import urllib.request
+        with urllib.request.urlopen(img.url, timeout=60) as r:
+            return r.read(), "image/png"
+    raise RuntimeError(f"OpenAI retornou item sem b64_json nem url: {img}")
+
+
 async def generate_image(
     prompt: str,
     aspect_ratio: str = "1:1",
     image_size: str = "1K",
+    input_image_b64: Optional[str] = None,
+    input_mime_type: Optional[str] = None,
 ) -> Tuple[str, str, Optional[str]]:
     """
-    Gera imagem via OpenAI (GPT-4o-mini turbo + GPT Image).
+    Gera ou edita imagem via OpenAI (Gemini turbo + GPT Image).
+    Se input_image_b64 for fornecido, usa o endpoint de edicao.
     Retorna (base64_str, mime_type, saved_relpath_ou_None).
     """
     import asyncio
@@ -184,20 +214,40 @@ async def generate_image(
             "Adicione no .env ou nas definicoes da Athena."
         )
 
+    gemini_key = (os.getenv("GEMINI_API_KEY") or "").strip()
     size = _ASPECT_TO_SIZE.get(aspect_ratio.strip(), "1024x1024")
     quality = _SIZE_TO_QUALITY.get(image_size.strip(), "medium")
 
     print(f"[ImageGen] Prompt original: {prompt[:80]!r}")
-    prompt = await asyncio.to_thread(_turbo_prompt, prompt, api_key)
-    print(f"[ImageGen] Gerando | size={size} | quality={quality}")
+    if gemini_key:
+        prompt = await asyncio.to_thread(_enhance_prompt_gemini, prompt, gemini_key)
+    else:
+        print("[ImageGen] GEMINI_API_KEY nao configurada, usando prompt original.")
+    print(f"[ImageGen] {'Editando' if input_image_b64 else 'Gerando'} | size={size} | quality={quality}")
+
+    # Decodifica imagem de entrada para edicao
+    input_bytes: Optional[bytes] = None
+    if input_image_b64:
+        try:
+            input_bytes = base64.b64decode(input_image_b64.strip(), validate=False)
+        except Exception as e:
+            print(f"[ImageGen] Falha ao decodificar imagem de entrada: {e!r}. Gerando do zero.")
+            input_bytes = None
 
     last_error: Exception = RuntimeError("Nenhum modelo disponivel.")
     for model in _IMAGE_MODELS:
         try:
             print(f"[ImageGen] Tentando: {model}")
-            raw_bytes, mime_type = await asyncio.to_thread(
-                _call_openai_images, api_key, model, prompt, size, quality
-            )
+            if input_bytes:
+                raw_bytes, mime_type = await asyncio.to_thread(
+                    _call_openai_images_edit,
+                    api_key, model, prompt, size, quality,
+                    input_bytes, input_mime_type or "image/png",
+                )
+            else:
+                raw_bytes, mime_type = await asyncio.to_thread(
+                    _call_openai_images, api_key, model, prompt, size, quality
+                )
             print(f"[ImageGen] OK | modelo={model} | bytes={len(raw_bytes)}")
             break
         except Exception as e:

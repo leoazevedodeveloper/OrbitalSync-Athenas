@@ -13,7 +13,9 @@ import * as Haptics from 'expo-haptics';
 import { COLORS, TYPOGRAPHY } from '../constants/config';
 
 export interface ToolConfirmation {
-  tool_name: string;
+  id: string;
+  tool: string;
+  tool_name?: string;
   description?: string;
   args?: Record<string, any>;
 }
@@ -57,7 +59,7 @@ export default function ConfirmationModal({ confirmation, onConfirm, onDeny }: C
 
           <View style={styles.toolBadge}>
             <Ionicons name="code-slash-outline" size={14} color={COLORS.orbGlow} />
-            <Text style={styles.toolName}>{confirmation.tool_name}</Text>
+            <Text style={styles.toolName}>{confirmation.tool ?? confirmation.tool_name}</Text>
           </View>
 
           {confirmation.description && (
