@@ -18,10 +18,13 @@ from orbital.server.bootstrap import app_socketio  # noqa: F401 — carrega sett
 if __name__ == "__main__":
     import uvicorn
 
+    host = os.getenv("ORBITAL_HOST", "0.0.0.0")
+    port = int(os.getenv("ORBITAL_PORT", "8000"))
+
     uvicorn.run(
         "server:app_socketio",
-        host="127.0.0.1",
-        port=8000,
+        host=host,
+        port=port,
         reload=False,
         loop="asyncio",
     )

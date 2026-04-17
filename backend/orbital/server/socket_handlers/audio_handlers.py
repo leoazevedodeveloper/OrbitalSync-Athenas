@@ -72,23 +72,34 @@ def register_audio_handlers(sio, emit_runtime_log):
 
         _ai_bars_last_emit = [0.0]
 
+        def _targeted_emit(event, data, *, ui_only=False):
+            target = st.response_target_sid
+            if ui_only and target is None:
+                return
+            kwargs = {"room": target} if target else {}
+            return asyncio.create_task(sio.emit(event, data, **kwargs))
+
         def on_audio_data(data_bytes):
             now = time.monotonic()
             if now - _ai_bars_last_emit[0] < (1.0 / 45.0):
                 return
             _ai_bars_last_emit[0] = now
             bars = pcm16_to_energy_bars(data_bytes, bars=64)
-            asyncio.create_task(sio.emit("audio_data", {"data": bars}))
+            _targeted_emit("audio_data", {"data": bars}, ui_only=True)
+
+        def on_audio_stream(pcm_bytes):
+            import base64 as _b64
+            _targeted_emit("audio_pcm", {"data": _b64.b64encode(pcm_bytes).decode()}, ui_only=True)
 
         def on_transcription(data):
             if st.audio_loop and st.audio_loop.paused and data.get("sender") == "User":
                 return
-            asyncio.create_task(sio.emit("transcription", data))
+            _targeted_emit("transcription", data, ui_only=True)
 
         def on_tool_confirmation(data):
             print(f"Requesting confirmation for tool: {data.get('tool')}")
             log_entry("warn", f"Aguardando confirmacao da tool: {data.get('tool')}", source="tools")
-            asyncio.create_task(sio.emit("tool_confirmation_request", data))
+            _targeted_emit("tool_confirmation_request", data, ui_only=True)
 
         def on_project_update(project_name):
             print(f"Sending Project Update: {project_name}")
@@ -112,23 +123,22 @@ def register_audio_handlers(sio, emit_runtime_log):
                     mime_type=mime_type or "image/png",
                     image_relpath=image_relpath,
                 )
-            asyncio.create_task(
-                sio.emit(
-                    "image_generated",
-                    {
-                        "data": image_b64,
-                        "mime_type": mime_type or "image/png",
-                        "caption": cap,
-                        "image_relpath": image_relpath,
-                    },
-                )
+            _targeted_emit(
+                "image_generated",
+                {
+                    "data": image_b64,
+                    "mime_type": mime_type or "image/png",
+                    "caption": cap,
+                    "image_relpath": image_relpath,
+                },
+                ui_only=True,
             )
 
         def on_timer_event(payload):
-            asyncio.create_task(sio.emit("assistant_timer", payload))
+            _targeted_emit("assistant_timer", payload, ui_only=True)
 
         def on_calendar_event(payload):
-            asyncio.create_task(sio.emit("assistant_calendar", payload))
+            _targeted_emit("assistant_calendar", payload, ui_only=True)
 
         async with st.audio_control_lock:
             if st.loop_task and not st.loop_task.done():
@@ -146,6 +156,7 @@ def register_audio_handlers(sio, emit_runtime_log):
                 st.audio_loop = athenas.AudioLoop(
                     video_mode="none",
                     on_audio_data=on_audio_data,
+                    on_audio_stream=on_audio_stream,
                     on_transcription=on_transcription,
                     on_tool_confirmation=on_tool_confirmation,
                     on_project_update=on_project_update,
@@ -170,6 +181,7 @@ def register_audio_handlers(sio, emit_runtime_log):
                     print("Starting with Audio Paused")
                     st.audio_loop.set_paused(True)
 
+                st.set_response_target(sid)
                 print("Creating asyncio task for AudioLoop.run()")
                 st.loop_task = asyncio.create_task(st.audio_loop.run())
 
@@ -209,6 +221,8 @@ def register_audio_handlers(sio, emit_runtime_log):
             if st.audio_loop or st.loop_task:
                 print("Stopping Audio Loop")
                 await shutdown_audio_loop(reason="stop_audio_event")
+                if st.response_target_sid == sid:
+                    st.set_response_target(None)
                 await sio.emit("status", {"msg": "A.D.A Stopped"})
                 await emit_runtime_log("info", "ATHENAS parada (A.D.A Stopped).", source="audio")
 

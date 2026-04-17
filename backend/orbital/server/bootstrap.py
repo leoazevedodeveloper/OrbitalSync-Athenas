@@ -243,21 +243,32 @@ async def _autostart_audio_loop():
 
             _bars_last = [0.0]
 
+            def _targeted_emit(event, data, *, ui_only=False):
+                target = st.response_target_sid
+                if ui_only and target is None:
+                    return
+                kwargs = {"room": target} if target else {}
+                return asyncio.create_task(sio.emit(event, data, **kwargs))
+
             def on_audio_data(data_bytes):
                 now = time.monotonic()
                 if now - _bars_last[0] < (1.0 / 45.0):
                     return
                 _bars_last[0] = now
                 bars = pcm16_to_energy_bars(data_bytes, bars=64)
-                asyncio.create_task(sio.emit("audio_data", {"data": bars}))
+                _targeted_emit("audio_data", {"data": bars}, ui_only=True)
+
+            def on_audio_stream(pcm_bytes):
+                import base64 as _b64
+                _targeted_emit("audio_pcm", {"data": _b64.b64encode(pcm_bytes).decode()}, ui_only=True)
 
             def on_transcription(data):
                 if st.audio_loop and st.audio_loop.paused and data.get("sender") == "User":
                     return
-                asyncio.create_task(sio.emit("transcription", data))
+                _targeted_emit("transcription", data, ui_only=True)
 
             def on_tool_confirmation(data):
-                asyncio.create_task(sio.emit("tool_confirmation_request", data))
+                _targeted_emit("tool_confirmation_request", data, ui_only=True)
 
             def on_project_update(project_name):
                 asyncio.create_task(sio.emit("project_update", {"project": project_name}))
@@ -269,21 +280,26 @@ async def _autostart_audio_loop():
                 asyncio.create_task(sio.emit("runtime_log", {"level": level, "message": message, "source": source}))
 
             def on_image_generated(image_b64, mime_type, caption=None, image_relpath=None):
-                asyncio.create_task(sio.emit("image_generated", {
-                    "data": image_b64,
-                    "mime_type": mime_type or "image/png",
-                    "caption": (caption or "Imagem gerada").strip() or "Imagem gerada",
-                }))
+                _targeted_emit(
+                    "image_generated",
+                    {
+                        "data": image_b64,
+                        "mime_type": mime_type or "image/png",
+                        "caption": (caption or "Imagem gerada").strip() or "Imagem gerada",
+                    },
+                    ui_only=True,
+                )
 
             def on_timer_event(payload):
-                asyncio.create_task(sio.emit("assistant_timer", payload))
+                _targeted_emit("assistant_timer", payload, ui_only=True)
 
             def on_calendar_event(payload):
-                asyncio.create_task(sio.emit("assistant_calendar", payload))
+                _targeted_emit("assistant_calendar", payload, ui_only=True)
 
             st.audio_loop = athenas.AudioLoop(
                 video_mode="none",
                 on_audio_data=on_audio_data,
+                on_audio_stream=on_audio_stream,
                 on_transcription=on_transcription,
                 on_tool_confirmation=on_tool_confirmation,
                 on_project_update=on_project_update,

@@ -1,0 +1,47 @@
+{
+  "expo": {
+    "name": "OrbitalSync",
+    "slug": "orbitalsync-mobile",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "dark",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#050510"
+    },
+    "ios": {
+      "supportsTablet": false,
+      "bundleIdentifier": "com.orbitalsync.mobile",
+      "infoPlist": {
+        "NSMicrophoneUsageDescription": "O OrbitalSync precisa do microfone para você conversar com a IA por voz.",
+        "NSCameraUsageDescription": "O OrbitalSync usa a câmera para reconhecimento facial e envio de imagens.",
+        "NSPhotoLibraryAddUsageDescription": "O OrbitalSync precisa salvar imagens geradas na sua galeria.",
+        "NSPhotoLibraryUsageDescription": "O OrbitalSync precisa acessar suas fotos para salvar imagens."
+      }
+    },
+    "android": {
+      "softwareKeyboardLayoutMode": "resize",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#050510"
+      },
+      "package": "com.orbitalsync.mobile",
+      "permissions": ["RECORD_AUDIO", "CAMERA", "READ_MEDIA_IMAGES"]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-av",
+      [
+        "expo-media-library",
+        {
+          "photosPermission": "O OrbitalSync precisa acessar suas fotos.",
+          "savePhotosPermission": "O OrbitalSync precisa salvar imagens na sua galeria."
+        }
+      ]
+    ]
+  }
+}

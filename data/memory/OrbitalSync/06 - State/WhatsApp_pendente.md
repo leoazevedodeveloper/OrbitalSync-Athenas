@@ -11,3 +11,8 @@
 [[WhatsApp]] · [[WhatsApp_log_index]] · [[Contexto_atual]]
 
 ## Mensagens não respondidas
+- 12:16 | Savio (+553298309669): ou
+- 12:17 | Savio (+553298309669): seu plano é o de 100 dol ne ?
+- 12:18 | Savio (+553298309669): To quase assinando a de 100 dol de novo
+- 12:18 | Savio (+553298309669): pessoal ta falando bem pra carai do opus 4.7
+

@@ -78,6 +78,7 @@ class AudioLoop:
         self,
         video_mode=DEFAULT_MODE,
         on_audio_data=None,
+        on_audio_stream=None,
         on_video_frame=None,
         on_transcription=None,
         on_tool_confirmation=None,
@@ -97,6 +98,7 @@ class AudioLoop:
     ):
         self.video_mode = video_mode
         self.on_audio_data = on_audio_data
+        self.on_audio_stream = on_audio_stream
         self.on_video_frame = on_video_frame
         self.on_transcription = on_transcription
         self.on_tool_confirmation = on_tool_confirmation 
@@ -131,6 +133,7 @@ class AudioLoop:
         self.audio_in_queue = None
         self.out_queue = None
         self.paused = False
+        self.speaker_muted = False
 
         self.session = None
 
@@ -1867,6 +1870,10 @@ class AudioLoop:
             bytestream = await self.audio_in_queue.get()
             if self.on_audio_data:
                 self.on_audio_data(bytestream)
+            if self.speaker_muted:
+                if self.on_audio_stream:
+                    self.on_audio_stream(bytestream)
+                continue
             await asyncio.to_thread(stream.write, bytestream)
 
     async def get_frames(self):

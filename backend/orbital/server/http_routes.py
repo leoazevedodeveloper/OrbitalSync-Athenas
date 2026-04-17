@@ -91,6 +91,9 @@ def register_http_routes(app: FastAPI) -> None:
                 return JSONResponse({"ok": False, "reason": "sessão inativa"})
             await asyncio.sleep(0.5)
 
+        # WhatsApp não deve ecoar na UI nem tocar no speaker — resposta vai pelo webhook.
+        st.set_response_target(None)
+
         try:
             await st.audio_loop.send_user_text_chat(notification)
         except Exception as exc:

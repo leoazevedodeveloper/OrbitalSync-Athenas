@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+from urllib.parse import parse_qs
 
 from orbital.settings import SETTINGS
 from orbital.services.authenticator import FaceAuthenticator
@@ -10,10 +11,20 @@ from .. import state as st
 from .common import RUNTIME_LOGS, RUNTIME_LOGS_ROOM
 
 
+def _extract_client_type(environ) -> str:
+    qs = environ.get("QUERY_STRING", "") if isinstance(environ, dict) else ""
+    params = parse_qs(qs or "")
+    raw = (params.get("client_type") or ["desktop"])[0]
+    value = (raw or "").strip().lower()
+    return value if value in ("mobile", "desktop") else "desktop"
+
+
 def register_connect_handlers(sio, emit_runtime_log):
     @sio.event
     async def connect(sid, environ):
-        print(f"Client connected: {sid}")
+        client_type = _extract_client_type(environ)
+        st.client_types[sid] = client_type
+        print(f"Client connected: {sid} (client_type={client_type})")
         await sio.emit("status", {"msg": "Connected to A.D.A Backend"}, room=sid)
         await emit_runtime_log("info", f"Cliente conectado: {sid[:8]}...", source="socket")
 
@@ -56,6 +67,9 @@ def register_connect_handlers(sio, emit_runtime_log):
             await sio.leave_room(sid, RUNTIME_LOGS_ROOM)
         except Exception:
             pass
+        st.client_types.pop(sid, None)
+        if st.response_target_sid == sid:
+            st.set_response_target(None)
         await emit_runtime_log("info", f"Cliente desconectado: {sid[:8]}...", source="socket")
 
     @sio.event

@@ -65,6 +65,7 @@ def register_chat_handlers(sio):
                     image_relpath=image_relpath_saved,
                 )
             print(f"[SERVER DEBUG] Sending chat image + text={text!r}")
+            st.set_response_target(sid)
             try:
                 await st.audio_loop.send_user_image_with_text(image_b64, mime_type, text)
             except Exception as e:
@@ -83,6 +84,7 @@ def register_chat_handlers(sio):
         if st.audio_loop.project_manager:
             st.audio_loop.project_manager.log_chat("User", text)
 
+        st.set_response_target(sid)
         await st.audio_loop.send_user_text_chat(text)
         print("[SERVER DEBUG] Message sent to model successfully.")
 
